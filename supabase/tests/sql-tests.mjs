@@ -31,6 +31,7 @@ const files = [
   "supabase/migrations/0003_functions.sql",
   "supabase/migrations/0004_automation.sql",
   "supabase/migrations/0005_workflows.sql",
+  "supabase/migrations/0006_expense_reject.sql",
   "supabase/seed.sql",
 ];
 
@@ -407,6 +408,39 @@ check("approvals cannot be edited directly", /workflow|locked/.test(directDecisi
 
 const queue = await asUser(U_SADAR, "authenticated", `select public.my_work_queue(10) as q`);
 check("work queue counts pending work", Number(queue.rows[0].q.pending_payments) >= 0 && Array.isArray(queue.rows[0].q.items), JSON.stringify(queue.rows[0].q).slice(0, 160));
+
+// 15c. An expense can be rejected without touching the fund.
+const fundRow = await db.query(`select id, balance_paise from public.funds where tenant_id = $$${BHR}$$ order by code limit 1`);
+const FUND = fundRow.rows[0].id;
+const fundBefore = fundRow.rows[0].balance_paise;
+
+const expIns = await asUser(U_SADAR, "authenticated", `
+  insert into public.expenses (tenant_id, fund_id, category, amount_paise, vendor)
+  values ($$${BHR}$$, $$${FUND}$$, 'Repair', 120000, 'Carpenter Sahab')
+  returning id, status, entered_by
+`);
+const EXPENSE = expIns.rows[0].id;
+check("browser expense starts pending", expIns.rows[0].status === "pending", JSON.stringify(expIns.rows[0]));
+
+let selfReject = "";
+try {
+  await asUser(U_SADAR, "authenticated", `select public.reject_expense($$${EXPENSE}$$, 'self')`);
+} catch (error) {
+  selfReject = error.message;
+}
+check("maker cannot reject own expense", selfReject.includes("Maker cannot reject"), selfReject);
+
+const ledgerBefore = await db.query(`select count(*)::int as n from public.ledger_entries where tenant_id = $$${BHR}$$`);
+await asUser(U_SEC, "authenticated", `select public.reject_expense($$${EXPENSE}$$, 'bill photo unreadable')`);
+
+const expAfter = await db.query(`select status, note, approved_by from public.expenses where id = $$${EXPENSE}$$`);
+check("another bearer can reject an expense", expAfter.rows[0].status === "rejected", JSON.stringify(expAfter.rows[0]));
+check("rejection keeps the reason", expAfter.rows[0].note === "bill photo unreadable", expAfter.rows[0].note);
+
+const fundAfter = await db.query(`select balance_paise from public.funds where id = $$${FUND}$$`);
+const ledgerAfter = await db.query(`select count(*)::int as n from public.ledger_entries where tenant_id = $$${BHR}$$`);
+check("rejection leaves the fund untouched", Number(fundAfter.rows[0].balance_paise) === Number(fundBefore), `${fundBefore} -> ${fundAfter.rows[0].balance_paise}`);
+check("rejection writes no ledger entry", ledgerAfter.rows[0].n === ledgerBefore.rows[0].n, `${ledgerBefore.rows[0].n} -> ${ledgerAfter.rows[0].n}`);
 
 // 16. Null role / null tenant must never bypass a permission check.
 const pending = await asService(`

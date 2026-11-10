@@ -645,6 +645,16 @@ export async function createExpense(input: NewExpense): Promise<Expense> {
   return toExpense(data);
 }
 
+export async function rejectExpense(id: string, reason: string): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client().rpc("reject_expense", {
+    p_expense_id: id,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
+
 export async function approveExpense(id: string): Promise<void> {
   if (isDemoMode) return;
 

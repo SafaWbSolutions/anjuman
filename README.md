@@ -111,7 +111,7 @@ src/app/
       plans/                 free / fixed / custom plans
       billing/               platform subscription billing
 supabase/
-  migrations/                0001 schema · 0002 RLS · 0003 functions · 0004 automation · 0005 approvals
+  migrations/                0001 schema · 0002 RLS · 0003 functions · 0004 automation · 0005 approvals · 0006 expense reject
   seed.sql                   demo tenant
   functions/
     send-queue/              drains the WhatsApp/SMS/email/push queue

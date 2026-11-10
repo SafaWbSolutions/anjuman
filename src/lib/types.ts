@@ -219,4 +219,6 @@ export interface SessionUser {
   role: Role;
   tenantId: string | null;
   tenantName: string;
+  /** Members row linked to this profile, for the member portal. */
+  memberId?: string | null;
 }

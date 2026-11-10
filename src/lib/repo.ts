@@ -14,6 +14,7 @@
 import { isDemoMode, supabase } from "./supabase";
 import {
   approvals as mockApprovals,
+  complaints as mockComplaints,
   expenses as mockExpenses,
   funds as mockFunds,
   invoices as mockInvoices,
@@ -23,9 +24,11 @@ import {
   payments as mockPayments,
   pendingPayments as mockPendingPayments,
   stats as mockStats,
+  tenants as mockTenants,
 } from "./mock";
 import type {
   Approval,
+  Complaint,
   Expense,
   Fund,
   Invoice,
@@ -217,6 +220,25 @@ function toLedger(r: Row): LedgerEntry {
   };
 }
 
+function toComplaint(r: Row): Complaint {
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    trackingCode: r.tracking_code,
+    category: r.category,
+    subject: r.subject,
+    body: r.body,
+    anonymous: Boolean(r.anonymous),
+    memberId: r.member_id ?? undefined,
+    status: r.status,
+    priority: r.priority,
+    assignedTo: r.assigned_to ?? undefined,
+    createdAt: r.created_at,
+    resolvedAt: r.resolved_at ?? undefined,
+    slaHours: num(r.sla_hours, 72),
+  };
+}
+
 function toNotice(r: Row): Notice {
   return {
     id: r.id,
@@ -361,6 +383,32 @@ export async function listNotices(): Promise<Notice[]> {
   return (data ?? []).map(toNotice);
 }
 
+export async function listComplaints(): Promise<Complaint[]> {
+  if (isDemoMode) return mockComplaints;
+
+  const { data, error } = await client()
+    .from("complaints")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(300);
+
+  if (error) throw error;
+  return (data ?? []).map(toComplaint);
+}
+
+/** All anjumans — super admin only (RLS enforces it). */
+export async function listTenants(): Promise<Tenant[]> {
+  if (isDemoMode) return mockTenants;
+
+  const { data, error } = await client()
+    .from("tenants")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []).map(toTenant);
+}
+
 export async function listApprovals(): Promise<Approval[]> {
   if (isDemoMode) return mockApprovals;
 
@@ -426,7 +474,35 @@ export async function getWorkQueue(): Promise<WorkQueue> {
         (i) => i.status !== "paid" && i.status !== "waived" && i.dueDate < "2026-11-10"
       ).length,
       unallocatedPaise: 0,
-      items: [],
+      items: [
+        ...mockPendingPayments.map((p) => ({
+          kind: "payment" as const,
+          id: p.id,
+          title: `Verify payment · ${mockMembers.find((m) => m.id === p.memberId)?.name ?? "Member"}`,
+          subtitle: `₹${(p.amountPaise / 100).toLocaleString("en-IN")} · ${p.method}`,
+          createdAt: p.createdAt,
+        })),
+        ...mockExpenses
+          .filter((e) => e.status === "pending")
+          .map((e) => ({
+            kind: "expense" as const,
+            id: e.id,
+            title: `Approve bill · ${e.vendor}`,
+            subtitle: `${e.category} · ₹${(e.amountPaise / 100).toLocaleString("en-IN")}`,
+            createdAt: e.createdAt,
+          })),
+        ...mockApprovals
+          .filter((a) => a.status === "pending")
+          .map((a) => ({
+            kind: "approval" as const,
+            id: a.id,
+            title: a.title,
+            subtitle: a.subtitle || a.entityType,
+            createdAt: a.requestedAt,
+          })),
+      ]
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .slice(0, 20),
     };
   }
 

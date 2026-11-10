@@ -11,7 +11,7 @@ export async function loadSessionUser(userId: string): Promise<SessionUser | nul
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("id, full_name, phone, role, tenant_id, is_active")
+    .select("id, full_name, phone, role, tenant_id, member_id, is_active")
     .eq("id", userId)
     .maybeSingle();
 
@@ -39,6 +39,7 @@ export async function loadSessionUser(userId: string): Promise<SessionUser | nul
     role: (profile.role as Role) ?? "member",
     tenantId: profile.tenant_id ?? null,
     tenantName,
+    memberId: profile.member_id ?? null,
   };
 }
 

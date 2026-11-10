@@ -15,6 +15,7 @@ import { isDemoMode, supabase } from "./supabase";
 import {
   approvals as mockApprovals,
   complaints as mockComplaints,
+  donations as mockDonations,
   expenses as mockExpenses,
   funds as mockFunds,
   invoices as mockInvoices,
@@ -30,6 +31,7 @@ import {
 import type {
   Approval,
   Complaint,
+  Donation,
   Expense,
   FeeOverride,
   FeePlan,
@@ -368,6 +370,154 @@ const demoFeeOverrides: FeeOverride[] = [
     amountPaise: 25000,
     reason: "Medical hardship — awaiting approval",
     createdAt: "2026-11-01T00:00:00.000Z",
+  },
+];
+
+function toDonation(r: Row): Donation {
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    fundId: r.fund_id,
+    fundName: r.funds?.name ?? r.fund_name ?? "",
+    donorName: r.donor_name,
+    memberId: r.member_id ?? undefined,
+    amountPaise: num(r.amount_paise),
+    method: r.method,
+    reference: r.reference ?? undefined,
+    status: r.status,
+    receiptNo: r.receipt_no ?? "",
+    anonymous: Boolean(r.anonymous),
+    note: r.note ?? undefined,
+    enteredBy: r.entered_by ?? "",
+    verifiedBy: r.verified_by ?? undefined,
+    createdAt: r.created_at,
+    verifiedAt: r.verified_at ?? undefined,
+  };
+}
+
+// Sample donations for demo mode
+const demoDonations: Donation[] = [
+  {
+    id: "d-1",
+    tenantId: "t-bhr",
+    fundId: "f-1",
+    fundName: "Masjid Construction",
+    donorName: "Haji Ashraf Ali",
+    memberId: "m-19",
+    amountPaise: 5000000,
+    method: "gateway",
+    reference: "order_abc123",
+    status: "verified",
+    receiptNo: "D-2026-00141",
+    anonymous: false,
+    note: "For new minaret",
+    enteredBy: "u-sadar",
+    verifiedBy: "u-khaj",
+    createdAt: "2026-11-09T11:20:00+05:30",
+    verifiedAt: "2026-11-09T11:25:00+05:30",
+  },
+  {
+    id: "d-2",
+    tenantId: "t-bhr",
+    fundId: "f-2",
+    fundName: "Zakat Fund",
+    donorName: "Anonymous",
+    amountPaise: 1500000,
+    method: "upi",
+    reference: "upi_ref_456",
+    status: "verified",
+    receiptNo: "D-2026-00140",
+    anonymous: true,
+    note: "Zakat al-Fitr",
+    enteredBy: "u-secretary",
+    verifiedBy: "u-sadar",
+    createdAt: "2026-11-08T20:10:00+05:30",
+    verifiedAt: "2026-11-08T20:15:00+05:30",
+  },
+  {
+    id: "d-3",
+    tenantId: "t-bhr",
+    fundId: "f-3",
+    fundName: "Imam Fund",
+    donorName: "Dr. Farhan Qureshi",
+    memberId: "m-7",
+    amountPaise: 1000000,
+    method: "upi",
+    reference: "upi_ref_789",
+    status: "verified",
+    receiptNo: "D-2026-00139",
+    anonymous: false,
+    enteredBy: "u-collector",
+    verifiedBy: "u-khaj",
+    createdAt: "2026-11-05T14:05:00+05:30",
+    verifiedAt: "2026-11-05T14:10:00+05:30",
+  },
+  {
+    id: "d-4",
+    tenantId: "t-bhr",
+    fundId: "f-4",
+    fundName: "Sadaqah Fund",
+    donorName: "Salman Ansari",
+    memberId: "m-13",
+    amountPaise: 250000,
+    method: "cash",
+    reference: "cash_box_1",
+    status: "verified",
+    receiptNo: "D-2026-00138",
+    anonymous: false,
+    enteredBy: "u-collector",
+    verifiedBy: "u-auditor",
+    createdAt: "2026-11-03T09:30:00+05:30",
+    verifiedAt: "2026-11-03T09:35:00+05:30",
+  },
+  {
+    id: "d-5",
+    tenantId: "t-bhr",
+    fundId: "f-5",
+    fundName: "Ramadan Iftar",
+    donorName: "Anonymous",
+    amountPaise: 600000,
+    method: "gateway",
+    reference: "order_ramadan_001",
+    status: "verified",
+    receiptNo: "D-2026-00137",
+    anonymous: true,
+    enteredBy: "u-secretary",
+    verifiedBy: "u-sadar",
+    createdAt: "2026-10-29T18:45:00+05:30",
+    verifiedAt: "2026-10-29T18:50:00+05:30",
+  },
+  {
+    id: "d-6",
+    tenantId: "t-bhr",
+    fundId: "f-1",
+    fundName: "Masjid Construction",
+    donorName: "Bilal Ahmad",
+    memberId: "m-22",
+    amountPaise: 2000000,
+    method: "cheque",
+    reference: "CHQ-123456",
+    status: "verified",
+    receiptNo: "D-2026-00136",
+    anonymous: false,
+    enteredBy: "u-collector",
+    verifiedBy: "u-khaj",
+    createdAt: "2026-10-25T12:00:00+05:30",
+    verifiedAt: "2026-10-25T12:05:00+05:30",
+  },
+  {
+    id: "d-7",
+    tenantId: "t-bhr",
+    fundId: "f-4",
+    fundName: "Sadaqah Fund",
+    donorName: "Anonymous Donor",
+    amountPaise: 100000,
+    method: "cash",
+    status: "pending",
+    receiptNo: "",
+    anonymous: true,
+    enteredBy: "u-collector",
+    createdAt: "2026-11-10T10:00:00+05:30",
   },
 ];
 
@@ -1290,4 +1440,97 @@ export async function broadcastNotice(id: string): Promise<number> {
   });
   if (error) throw error;
   return num(data);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Donations
+// ═══════════════════════════════════════════════════════════════
+
+export async function listDonations(): Promise<Donation[]> {
+  if (isDemoMode) return demoDonations;
+
+  const { data, error } = await client()
+    .from("donations")
+    .select("*, funds(name)")
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (error) throw error;
+  return (data ?? []).map(toDonation);
+}
+
+export interface NewDonation {
+  fundId: string;
+  donorName: string;
+  memberId?: string | null;
+  amountPaise: number;
+  method: Donation["method"];
+  reference?: string;
+  anonymous?: boolean;
+  note?: string;
+}
+
+export async function createDonation(input: NewDonation): Promise<Donation> {
+  if (isDemoMode) {
+    return {
+      id: `demo-don-${Date.now()}`,
+      tenantId: "t-bhr",
+      fundId: input.fundId,
+      fundName: "",
+      donorName: input.donorName,
+      memberId: input.memberId ?? undefined,
+      amountPaise: input.amountPaise,
+      method: input.method,
+      reference: input.reference ?? "",
+      status: "pending",
+      receiptNo: "",
+      anonymous: input.anonymous ?? false,
+      note: input.note,
+      enteredBy: "demo",
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  const { data, error } = await client().rpc("create_donation", {
+    p_fund_id: input.fundId,
+    p_donor_name: input.donorName.trim(),
+    p_member_id: input.memberId ?? null,
+    p_amount_paise: input.amountPaise,
+    p_method: input.method,
+    p_reference: input.reference?.trim() ?? null,
+    p_anonymous: input.anonymous ?? false,
+    p_note: input.note?.trim() ?? null,
+  });
+
+  if (error) throw error;
+
+  // Fetch the created donation
+  const { data: donation, error: fetchError } = await client()
+    .from("donations")
+    .select("*, funds(name)")
+    .eq("id", data)
+    .single();
+
+  if (fetchError) throw fetchError;
+  return toDonation(donation);
+}
+
+export async function verifyDonation(id: string): Promise<string> {
+  if (isDemoMode) return `D-DEMO-${Date.now()}`;
+
+  const { data, error } = await client().rpc("verify_donation", {
+    p_donation_id: id,
+  });
+  if (error) throw error;
+  return String(data);
+}
+
+export async function rejectDonation(id: string, reason: string): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client().rpc("reject_donation", {
+    p_donation_id: id,
+    p_reason: reason,
+  });
+  if (error) throw error;
 }

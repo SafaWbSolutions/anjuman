@@ -217,6 +217,29 @@ export interface PrayerDay {
   source?: "calculated" | "manual" | "excel";
 }
 
+export type DonationMethod = "cash" | "upi" | "gateway" | "cheque";
+export type DonationStatus = "pending" | "verified" | "rejected" | "disputed";
+
+export interface Donation {
+  id: string;
+  tenantId: string;
+  fundId: string;
+  fundName: string;
+  donorName: string;
+  memberId?: string;
+  amountPaise: number;
+  method: DonationMethod;
+  reference?: string;
+  status: DonationStatus;
+  receiptNo: string;
+  anonymous: boolean;
+  note?: string;
+  enteredBy: string;
+  verifiedBy?: string;
+  createdAt: string;
+  verifiedAt?: string;
+}
+
 export interface Integration {
   id: string;
   scope: "platform" | "tenant";

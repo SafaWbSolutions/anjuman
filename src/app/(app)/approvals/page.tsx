@@ -1,14 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
   CheckCircle2,
   Clock,
   FileCheck2,
+  RefreshCw,
   ShieldCheck,
   XCircle,
 } from "lucide-react";
-import { approvals } from "@/lib/mock";
+import type { Approval } from "@/lib/types";
+import { decideApproval, listApprovals } from "@/lib/repo";
 import {
   Avatar,
   Badge,
@@ -25,17 +28,63 @@ import { useAuth } from "@/lib/auth";
 
 export default function ApprovalsPage() {
   const { user } = useAuth();
-  const [items, setItems] = useState(approvals);
+  const [items, setItems] = useState<Approval[]>([]);
   const [tab, setTab] = useState<"pending" | "done">("pending");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setItems(await listApprovals());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Approvals load nahi ho sake");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const list = useMemo(
     () => items.filter((a) => (tab === "pending" ? a.status === "pending" : a.status !== "pending")),
     [items, tab]
   );
 
-  function act(id: string, status: "approved" | "rejected") {
-    setItems((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
-    toast(status === "approved" ? "Approved and posted to the ledger" : "Rejected — returned to requester", status === "approved" ? "success" : "error");
+  async function act(a: Approval, approve: boolean) {
+    let note: string | undefined;
+
+    if (!approve) {
+      const reason = window.prompt("Reject karne ki wajah likhein (optional):", "");
+      if (reason === null) return;
+      note = reason.trim() || undefined;
+    }
+
+    setBusyId(a.id);
+    try {
+      const result = await decideApproval(a.id, approve, note);
+      setItems((prev) =>
+        prev.map((x) =>
+          x.id === a.id ? { ...x, status: result.status as Approval["status"] } : x
+        )
+      );
+      toast(
+        approve
+          ? result.waived > 0
+            ? `Approved — ${result.waived} month(s) marked waived`
+            : "Approved and posted to the ledger"
+          : "Rejected — returned to requester",
+        approve ? "success" : "error"
+      );
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Decision save nahi hua", "error");
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -44,6 +93,11 @@ export default function ApprovalsPage() {
         eyebrow="Governance"
         title="Approvals"
         description="Maker–checker queue. Payments, expenses and waivers need a second person before they touch the ledger."
+        actions={
+          <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
+            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} /> Refresh
+          </Button>
+        }
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -57,6 +111,16 @@ export default function ApprovalsPage() {
           tone="brand"
         />
       </div>
+
+      {error && (
+        <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-[12.5px] text-red-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button className="font-semibold underline" onClick={() => void load()}>
+            Retry
+          </button>
+        </div>
+      )}
 
       <div className="mt-5 mb-4 inline-flex rounded-xl border border-ink-200 bg-white p-1">
         {[
@@ -76,7 +140,11 @@ export default function ApprovalsPage() {
         ))}
       </div>
 
-      {list.length === 0 ? (
+      {loading ? (
+        <Card>
+          <div className="p-10 text-center text-[12.5px] text-ink-500">Approvals load ho rahe hain…</div>
+        </Card>
+      ) : list.length === 0 ? (
         <Card>
           <EmptyState
             icon={FileCheck2}
@@ -135,11 +203,23 @@ export default function ApprovalsPage() {
 
               {a.status === "pending" ? (
                 <div className="flex gap-2 border-t border-ink-100 bg-ink-50/50 p-3">
-                  <Button variant="secondary" size="sm" className="flex-1" onClick={() => act(a.id, "rejected")}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="flex-1"
+                    disabled={busyId === a.id}
+                    onClick={() => void act(a, false)}
+                  >
                     <XCircle className="h-3.5 w-3.5" /> Reject
                   </Button>
-                  <Button size="sm" className="flex-1" onClick={() => act(a.id, "approved")}>
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    disabled={busyId === a.id}
+                    onClick={() => void act(a, true)}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    {busyId === a.id ? "Saving…" : "Approve"}
                   </Button>
                 </div>
               ) : (

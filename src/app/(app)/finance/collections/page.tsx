@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
   Banknote,
   CheckCircle2,
   ChevronRight,
@@ -10,22 +11,25 @@ import {
   FileText,
   HandCoins,
   Printer,
+  RefreshCw,
   Search,
   ShieldCheck,
   Smartphone,
   Wallet,
   X,
 } from "lucide-react";
+import { activeTenant } from "@/lib/mock";
+import type { Invoice, Member, Payment, PaymentMethod, Tenant } from "@/lib/types";
 import {
-  members,
-  payments,
-  pendingPayments,
-  duesForMember,
-  dueTotal,
-  activeTenant,
-  memberById,
-} from "@/lib/mock";
-import type { Member, PaymentMethod } from "@/lib/types";
+  createPayment,
+  getCurrentTenant,
+  listInvoices,
+  listMembers,
+  listPayments,
+  rejectPayment,
+  verifyPayment,
+} from "@/lib/repo";
+import { isDemoMode } from "@/lib/supabase";
 import {
   amountInWords,
   cn,
@@ -56,26 +60,104 @@ import { ProgressBar } from "@/components/charts";
 
 type Tab = "verify" | "receipts";
 
+interface ReceiptInfo {
+  receiptNo: string;
+  member: Member;
+  amount: number;
+  method: PaymentMethod;
+  months: string[];
+  reference: string;
+  date: string;
+}
+
+function methodLabel(method: PaymentMethod): string {
+  switch (method) {
+    case "upi":
+      return "UPI transfer";
+    case "gateway":
+      return "Payment gateway";
+    case "cheque":
+      return "Cheque";
+    case "adjustment":
+      return "Adjustment";
+    default:
+      return "Cash";
+  }
+}
+
 export default function CollectionsPage() {
   const [tab, setTab] = useState<Tab>("verify");
   const [q, setQ] = useState("");
   const [collectOpen, setCollectOpen] = useState(false);
-  const [presetMember, setPresetMember] = useState<Member | null>(null);
-  const [receipt, setReceipt] = useState<{
-    receiptNo: string;
-    member: Member;
-    amount: number;
-    method: PaymentMethod;
-    months: string[];
-    reference: string;
-    date: string;
-  } | null>(null);
+  const [receipt, setReceipt] = useState<ReceiptInfo | null>(null);
+
+  const [members, setMembers] = useState<Member[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [memberRows, paymentRows, invoiceRows, tenantRow] = await Promise.all([
+        listMembers(),
+        listPayments(),
+        listInvoices(),
+        getCurrentTenant(),
+      ]);
+      setMembers(memberRows);
+      setPayments(paymentRows);
+      setInvoices(invoiceRows);
+      setTenant(tenantRow);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Collections load nahi ho sake");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const memberMap = useMemo(
+    () => new Map(members.map((m) => [m.id, m])),
+    [members]
+  );
+
+  const duesFor = useCallback(
+    (memberId: string) =>
+      invoices
+        .filter(
+          (i) =>
+            i.memberId === memberId &&
+            (i.status === "pending" || i.status === "partial")
+        )
+        .sort((a, b) => a.period.localeCompare(b.period)),
+    [invoices]
+  );
+
+  const dueTotalOf = useCallback(
+    (memberId: string) =>
+      duesFor(memberId).reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0),
+    [duesFor]
+  );
+
+  const pendingPayments = useMemo(
+    () => payments.filter((p) => p.status === "pending"),
+    [payments]
+  );
 
   const rows = useMemo(() => {
     const term = q.trim().toLowerCase();
     return payments.filter((p) => {
       if (!term) return true;
-      const m = memberById(p.memberId);
+      const m = memberMap.get(p.memberId);
       return (
         p.receiptNo.toLowerCase().includes(term) ||
         p.reference.toLowerCase().includes(term) ||
@@ -83,13 +165,64 @@ export default function CollectionsPage() {
         (m?.code.toLowerCase().includes(term) ?? false)
       );
     });
-  }, [q]);
+  }, [payments, q, memberMap]);
 
+  const monthKey = new Date().toISOString().slice(0, 7);
   const collectedThisMonth = payments
-    .filter((p) => p.createdAt.startsWith("2026-11"))
+    .filter((p) => p.status === "verified" && p.createdAt.startsWith(monthKey))
     .reduce((s, p) => s + p.amountPaise, 0);
-  const verifiedTotal = payments.reduce((s, p) => s + p.amountPaise, 0);
+  const verifiedTotal = payments
+    .filter((p) => p.status === "verified")
+    .reduce((s, p) => s + p.amountPaise, 0);
   const pendingTotal = pendingPayments.reduce((s, p) => s + p.amountPaise, 0);
+
+  async function onVerify(p: Payment, m: Member) {
+    setBusyId(p.id);
+    try {
+      const receiptNo = await verifyPayment(p.id);
+      setPayments((prev) =>
+        prev.map((x) =>
+          x.id === p.id
+            ? { ...x, status: "verified", receiptNo, settledAt: new Date().toISOString() }
+            : x
+        )
+      );
+      setReceipt({
+        receiptNo,
+        member: m,
+        amount: p.amountPaise,
+        method: p.method,
+        months: p.createdAt ? [p.createdAt.slice(0, 7)] : [monthKey],
+        reference: p.reference,
+        date: new Date().toISOString(),
+      });
+      toast(`Verified ${formatINR(p.amountPaise)} · ${receiptNo}`);
+      if (!isDemoMode) await load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Payment verify nahi hua", "error");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function onReject(p: Payment) {
+    const reason = window.prompt("Payment reject karne ki wajah likhein:", "");
+    if (reason === null) return;
+
+    setBusyId(p.id);
+    try {
+      await rejectPayment(p.id, reason.trim() || "Rejected by office");
+      setPayments((prev) =>
+        prev.map((x) => (x.id === p.id ? { ...x, status: "rejected" } : x))
+      );
+      toast("Payment rejected and returned to collector", "error");
+      if (!isDemoMode) await load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Payment reject nahi hua", "error");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <>
@@ -98,14 +231,18 @@ export default function CollectionsPage() {
         title="Collections"
         description="Record member chanda, verify UPI/gateway payments and print receipts. Every entry is written to the tamper-evident ledger."
         actions={
-          <Button
-            onClick={() => {
-              setPresetMember(null);
-              setCollectOpen(true);
-            }}
-          >
-            <HandCoins className="h-4 w-4" /> Collect payment
-          </Button>
+          <>
+            <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
+              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} /> Refresh
+            </Button>
+            <Button
+              onClick={() => {
+                setCollectOpen(true);
+              }}
+            >
+              <HandCoins className="h-4 w-4" /> Collect payment
+            </Button>
+          </>
         }
       />
 
@@ -113,14 +250,14 @@ export default function CollectionsPage() {
         <StatCard
           label="Collected this month"
           value={formatINR(collectedThisMonth)}
-          sub="Nov 2026"
+          sub={periodLabel(monthKey)}
           icon={Banknote}
           tone="green"
         />
         <StatCard
           label="All-time verified"
           value={formatINR(verifiedTotal)}
-          sub={`${payments.length} receipts`}
+          sub={`${payments.filter((p) => p.status === "verified").length} receipts`}
           icon={ShieldCheck}
           tone="brand"
         />
@@ -133,12 +270,22 @@ export default function CollectionsPage() {
         />
         <StatCard
           label="Pending dues pool"
-          value={formatINR(members.reduce((s, m) => s + dueTotal(m.id), 0))}
+          value={formatINR(members.reduce((s, m) => s + dueTotalOf(m.id), 0))}
           sub="Across all members"
           icon={Wallet}
           tone="slate"
         />
       </div>
+
+      {error && (
+        <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-[12.5px] text-red-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button className="font-semibold underline" onClick={() => void load()}>
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* ── Tabs ─────────────────────────────────────────────── */}
       <div className="mt-6 mb-4 flex flex-wrap items-center gap-3">
@@ -180,10 +327,17 @@ export default function CollectionsPage() {
         </div>
       </div>
 
-      {tab === "verify" ? (
+      {loading ? (
+        <Card>
+          <div className="p-10 text-center text-[12.5px] text-ink-500">
+            Collections load ho rahe hain…
+          </div>
+        </Card>
+      ) : tab === "verify" ? (
         <div className="grid gap-4 lg:grid-cols-2">
           {pendingPayments.map((p) => {
-            const m = memberById(p.memberId)!;
+            const m = memberMap.get(p.memberId);
+            if (!m) return null;
             return (
               <Card key={p.id} className="overflow-hidden">
                 <div className="flex items-start gap-3 border-b border-ink-100 p-4">
@@ -194,7 +348,8 @@ export default function CollectionsPage() {
                     </p>
                     <p className="font-mono text-[11px] text-ink-500">{m.code}</p>
                     <p className="mt-1 text-[11.5px] text-ink-400">
-                      {formatDate(p.createdAt, true)} · entered by {p.enteredBy}
+                      {formatDate(p.createdAt, true)}
+                      {p.enteredBy ? ` · entered by ${p.enteredBy}` : ""}
                     </p>
                   </div>
                   <Badge tone="amber" dot>
@@ -216,42 +371,40 @@ export default function CollectionsPage() {
                       ) : (
                         <CreditCard className="h-3.5 w-3.5" />
                       )}
-                      {p.method === "upi" ? "UPI transfer" : "Payment gateway"}
+                      {methodLabel(p.method)}
                     </p>
                   </div>
                   <div className="col-span-2">
                     <p className="text-ink-400">Reference</p>
                     <p className="mt-0.5 font-mono text-[12px] text-ink-700">
-                      {p.reference}
+                      {p.reference || "—"}
                     </p>
                   </div>
+                  {p.note && (
+                    <div className="col-span-2">
+                      <p className="text-ink-400">Note</p>
+                      <p className="mt-0.5 text-[12px] text-ink-700">{p.note}</p>
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2 border-t border-ink-100 bg-ink-50/50 p-3">
                   <Button
                     size="sm"
                     variant="secondary"
                     className="flex-1"
-                    onClick={() => toast("Payment rejected and returned to collector", "error")}
+                    disabled={busyId === p.id}
+                    onClick={() => void onReject(p)}
                   >
                     <X className="h-3.5 w-3.5" /> Reject
                   </Button>
                   <Button
                     size="sm"
                     className="flex-1"
-                    onClick={() => {
-                      toast(`Verified ${formatINR(p.amountPaise)} · receipt generated`);
-                      setReceipt({
-                        receiptNo: `R-2026-${String(1400 + Math.floor(Math.random() * 90)).padStart(5, "0")}`,
-                        member: m,
-                        amount: p.amountPaise,
-                        method: p.method,
-                        months: ["2026-11"],
-                        reference: p.reference,
-                        date: new Date().toISOString(),
-                      });
-                    }}
+                    disabled={busyId === p.id}
+                    onClick={() => void onVerify(p, m)}
                   >
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Verify &amp; receipt
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    {busyId === p.id ? "Saving…" : "Verify & receipt"}
                   </Button>
                 </div>
               </Card>
@@ -325,7 +478,7 @@ export default function CollectionsPage() {
             </thead>
             <tbody className="divide-y divide-ink-100">
               {rows.slice(0, 40).map((p) => {
-                const m = memberById(p.memberId);
+                const m = memberMap.get(p.memberId);
                 return (
                   <tr key={p.id} className="hover:bg-ink-50/60">
                     <Td>
@@ -369,18 +522,20 @@ export default function CollectionsPage() {
                     </Td>
                     <Td className="text-right">
                       <button
-                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-medium text-brand-700 hover:bg-brand-50"
-                        onClick={() =>
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-40"
+                        disabled={!m || p.status !== "verified"}
+                        onClick={() => {
+                          if (!m) return;
                           setReceipt({
                             receiptNo: p.receiptNo,
-                            member: m!,
+                            member: m,
                             amount: p.amountPaise,
                             method: p.method,
                             months: [p.createdAt.slice(0, 7)],
                             reference: p.reference,
                             date: p.createdAt,
-                          })
-                        }
+                          });
+                        }}
                       >
                         <Printer className="h-3.5 w-3.5" /> Receipt
                       </button>
@@ -395,15 +550,19 @@ export default function CollectionsPage() {
 
       <CollectDrawer
         open={collectOpen}
-        preset={presetMember}
+        members={members}
+        duesFor={duesFor}
+        dueTotalOf={dueTotalOf}
         onClose={() => setCollectOpen(false)}
-        onDone={(r) => {
+        onSaved={async (payment) => {
           setCollectOpen(false);
-          setReceipt(r);
+          setPayments((prev) => (prev.some((x) => x.id === payment.id) ? prev : [payment, ...prev]));
+          setTab("verify");
+          if (!isDemoMode) await load();
         }}
       />
 
-      <ReceiptDrawer receipt={receipt} onClose={() => setReceipt(null)} />
+      <ReceiptDrawer receipt={receipt} tenant={tenant ?? activeTenant} onClose={() => setReceipt(null)} />
     </>
   );
 }
@@ -414,31 +573,28 @@ export default function CollectionsPage() {
 
 function CollectDrawer({
   open,
-  preset,
+  members,
+  duesFor,
+  dueTotalOf,
   onClose,
-  onDone,
+  onSaved,
 }: {
   open: boolean;
-  preset: Member | null;
+  members: Member[];
+  duesFor: (memberId: string) => Invoice[];
+  dueTotalOf: (memberId: string) => number;
   onClose: () => void;
-  onDone: (r: {
-    receiptNo: string;
-    member: Member;
-    amount: number;
-    method: PaymentMethod;
-    months: string[];
-    reference: string;
-    date: string;
-  }) => void;
+  onSaved: (payment: Payment) => void | Promise<void>;
 }) {
   const [q, setQ] = useState("");
-  const [member, setMember] = useState<Member | null>(preset);
+  const [member, setMember] = useState<Member | null>(null);
   const [mode, setMode] = useState<"1" | "2" | "all">("1");
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [reference, setReference] = useState("");
   const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const dues = member ? duesForMember(member.id) : [];
+  const dues = member ? duesFor(member.id) : [];
   const months =
     mode === "1" ? dues.slice(0, 1) : mode === "2" ? dues.slice(0, 2) : dues;
   const total = months.reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0);
@@ -463,25 +619,35 @@ function CollectDrawer({
     setNote("");
   }
 
-  function submit() {
+  async function submit() {
     if (!member) return toast("Select a member first", "error");
     if (total <= 0) return toast("No dues to collect", "error");
-    if (method !== "cash" && !reference.trim())
-      return toast("Reference number is required for UPI/gateway", "error");
+    if (method === "upi" || method === "gateway") {
+      if (!reference.trim())
+        return toast("Reference number is required for UPI/gateway", "error");
+    }
 
-    onDone({
-      receiptNo: `R-2026-${String(1400 + Math.floor(Math.random() * 90)).padStart(5, "0")}`,
-      member,
-      amount: total,
-      method,
-      months: months.map((i) => i.period),
-      reference:
-        reference.trim() ||
-        (method === "cash" ? "CASH" : "AUTO-" + Math.random().toString(36).slice(2, 8).toUpperCase()),
-      date: new Date().toISOString(),
-    });
-    toast(`Collected ${formatINR(total)} from ${member.name}`);
-    reset();
+    setSaving(true);
+    try {
+      const payment = await createPayment({
+        memberId: member.id,
+        amountPaise: total,
+        method,
+        reference: reference.trim() || undefined,
+        note: note.trim() || undefined,
+      });
+      const monthText = months.map((i) => periodLabel(i.period)).join(" + ");
+      toast(
+        `Recorded ${formatINR(total)} from ${member.name} (${monthText}) — pending verification`,
+        "info"
+      );
+      reset();
+      await onSaved(payment);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Payment save nahi hua", "error");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -489,7 +655,7 @@ function CollectDrawer({
       open={open}
       onClose={onClose}
       title="Collect payment"
-      subtitle="Record chanda and issue a numbered receipt"
+      subtitle="Record chanda — receipt is issued after verification"
       width="max-w-xl"
       footer={
         <div className="flex items-center justify-between gap-3">
@@ -500,11 +666,12 @@ function CollectDrawer({
             <p className="text-lg font-semibold text-ink-900">{formatINR(total)}</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={onClose}>
+            <Button variant="secondary" onClick={onClose} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={submit}>
-              <CheckCircle2 className="h-4 w-4" /> Save &amp; receipt
+            <Button onClick={() => void submit()} disabled={saving || !member}>
+              <CheckCircle2 className="h-4 w-4" />
+              {saving ? "Saving…" : "Record payment"}
             </Button>
           </div>
         </div>
@@ -539,10 +706,10 @@ function CollectDrawer({
                 <span
                   className={cn(
                     "text-[11.5px] font-medium",
-                    dueTotal(m.id) > 0 ? "text-amber-700" : "text-emerald-600"
+                    dueTotalOf(m.id) > 0 ? "text-amber-700" : "text-emerald-600"
                   )}
                 >
-                  {dueTotal(m.id) > 0 ? formatINR(dueTotal(m.id)) : "Clear"}
+                  {dueTotalOf(m.id) > 0 ? formatINR(dueTotalOf(m.id)) : "Clear"}
                 </span>
                 <ChevronRight className="h-3.5 w-3.5 text-ink-300" />
               </button>
@@ -718,13 +885,11 @@ function CollectDrawer({
             </div>
           </div>
 
-          {method !== "cash" && (
-            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11.5px] leading-relaxed text-amber-900">
-              This entry will be saved as <strong>pending verification</strong>.
-              A receipt is issued only after the sadar or khajanchi matches the
-              reference with the bank statement.
-            </div>
-          )}
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11.5px] leading-relaxed text-amber-900">
+            This entry is saved as <strong>pending verification</strong>. A numbered
+            receipt is issued only after a second office bearer matches it — so no
+            one can quietly add or duplicate a collection.
+          </div>
         </>
       )}
     </Drawer>
@@ -737,17 +902,11 @@ function CollectDrawer({
 
 function ReceiptDrawer({
   receipt,
+  tenant,
   onClose,
 }: {
-  receipt: {
-    receiptNo: string;
-    member: Member;
-    amount: number;
-    method: PaymentMethod;
-    months: string[];
-    reference: string;
-    date: string;
-  } | null;
+  receipt: ReceiptInfo | null;
+  tenant: Tenant;
   onClose: () => void;
 }) {
   const [size, setSize] = useState<"58" | "80">("80");
@@ -797,15 +956,15 @@ function ReceiptDrawer({
         <div className={cn("bg-white p-3 shadow-sm", size === "58" ? "receipt-58" : "receipt-80")}>
           <div className="text-center">
             <p className="text-[13px] font-bold tracking-wide">
-              {activeTenant.name}
+              {tenant.name}
             </p>
             <p className="text-[9px]">
-              {activeTenant.masjid}, {activeTenant.village}
+              {tenant.masjid}, {tenant.village}
             </p>
             <p className="text-[9px]">
-              {activeTenant.district}, {activeTenant.state} — {activeTenant.pincode}
+              {tenant.district}, {tenant.state} — {tenant.pincode}
             </p>
-            <p className="text-[9px]">Reg: {activeTenant.regNo}</p>
+            <p className="text-[9px]">Reg: {tenant.regNo}</p>
             <div className="my-1.5 border-t border-dashed border-black" />
             <p className="text-[11px] font-bold">PAYMENT RECEIPT</p>
             <div className="my-1.5 border-t border-dashed border-black" />

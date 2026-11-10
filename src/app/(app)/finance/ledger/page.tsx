@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
   ArrowDownLeft,
   ArrowUpRight,
   BookOpenCheck,
@@ -9,10 +10,11 @@ import {
   Download,
   Link2,
   Lock,
+  RefreshCw,
   Search,
   ShieldCheck,
 } from "lucide-react";
-import { ledger } from "@/lib/mock";
+import { getDashboard, listLedger } from "@/lib/repo";
 import {
   Badge,
   Button,
@@ -36,9 +38,34 @@ export default function LedgerPage() {
   const [type, setType] = useState("all");
   const [selected, setSelected] = useState<LedgerEntry | null>(null);
 
+  const [entries, setEntries] = useState<LedgerEntry[]>([]);
+  const [ledgerOk, setLedgerOk] = useState(true);
+  const [brokenAt, setBrokenAt] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [rows, snapshot] = await Promise.all([listLedger(), getDashboard()]);
+      setEntries(rows);
+      setLedgerOk(snapshot.ledgerOk);
+      setBrokenAt(snapshot.ledgerBrokenAtSeq);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ledger load nahi ho saka");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
   const rows = useMemo(
     () =>
-      ledger.filter((e) => {
+      entries.filter((e) => {
         if (type !== "all" && e.refType !== type) return false;
         const term = q.trim().toLowerCase();
         if (!term) return true;
@@ -49,21 +76,68 @@ export default function LedgerPage() {
           e.hash.toLowerCase().includes(term)
         );
       }),
-    [q, type]
+    [entries, q, type]
   );
 
-  const debit = ledger.reduce((s, e) => s + e.debitPaise, 0);
-  const credit = ledger.reduce((s, e) => s + e.creditPaise, 0);
+  const debit = entries.reduce((s, e) => s + e.debitPaise, 0);
+  const credit = entries.reduce((s, e) => s + e.creditPaise, 0);
   const balance = debit - credit;
 
   const typeTone: Record<string, "green" | "red" | "blue" | "violet" | "slate" | "amber"> = {
     payment: "green",
-    donation: "brand" as never,
+    donation: "violet",
     expense: "red",
     opening: "slate",
     reversal: "amber",
     transfer: "blue",
   };
+
+  async function verifyChain() {
+    setLoading(true);
+    try {
+      const snapshot = await getDashboard();
+      setLedgerOk(snapshot.ledgerOk);
+      setBrokenAt(snapshot.ledgerBrokenAtSeq);
+      toast(
+        snapshot.ledgerOk
+          ? "Integrity check passed — chain is intact"
+          : `Chain broken at entry #${snapshot.ledgerBrokenAtSeq}`,
+        snapshot.ledgerOk ? "success" : "error"
+      );
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Chain check fail ho gaya", "error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function exportCsv() {
+    const head = ["Date", "Narration", "Account", "Ref type", "Ref no", "Debit", "Credit", "Hash"];
+    const body = rows.map((e) =>
+      [
+        e.date,
+        e.narration,
+        e.account,
+        e.refType,
+        e.refNo,
+        String(e.debitPaise),
+        String(e.creditPaise),
+        e.hash,
+      ]
+        .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`)
+        .join(",")
+    );
+    const blob = new Blob([[head.join(","), ...body].join("\r\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ledger-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast(`${rows.length} ledger entries exported`);
+  }
 
   return (
     <>
@@ -73,21 +147,40 @@ export default function LedgerPage() {
         description="Append-only, hash-chained record of every rupee. Each entry links to the previous one, so tampering breaks the chain visibly."
         actions={
           <>
-            <Button variant="secondary" onClick={() => toast("Ledger exported as CSV")}>
+            <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
+              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} /> Refresh
+            </Button>
+            <Button variant="secondary" onClick={exportCsv} disabled={rows.length === 0}>
               <Download className="h-4 w-4" /> Export
             </Button>
-            <Button onClick={() => toast("Integrity check passed — chain is intact")}>
+            <Button onClick={() => void verifyChain()} disabled={loading}>
               <ShieldCheck className="h-4 w-4" /> Verify chain
             </Button>
           </>
         }
       />
 
+      {error && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-[12.5px] text-red-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button className="font-semibold underline" onClick={() => void load()}>
+            Retry
+          </button>
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total inflow" value={formatINR(debit)} sub={`${ledger.length} entries`} icon={ArrowDownLeft} tone="green" />
+        <StatCard label="Total inflow" value={formatINR(debit)} sub={`${entries.length} entries`} icon={ArrowDownLeft} tone="green" />
         <StatCard label="Total outflow" value={formatINR(credit)} sub="Expenses & reversals" icon={ArrowUpRight} tone="red" />
         <StatCard label="Book balance" value={formatINR(balance)} sub="Debits − credits" icon={BookOpenCheck} tone="brand" />
-        <StatCard label="Chain integrity" value="Verified" sub="Last check just now" icon={Lock} tone="green" />
+        <StatCard
+          label="Chain integrity"
+          value={ledgerOk ? "Verified" : "Broken"}
+          sub={ledgerOk ? "Hash chain intact" : `Break at entry #${brokenAt}`}
+          icon={Lock}
+          tone={ledgerOk ? "green" : "red"}
+        />
       </div>
 
       <div className="mt-5 mb-4 flex flex-wrap items-center gap-3">
@@ -100,61 +193,82 @@ export default function LedgerPage() {
           <option value="opening">Opening</option>
           <option value="reversal">Reversals</option>
         </Select>
-        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[11.5px] font-medium text-emerald-700 ring-1 ring-emerald-200">
-          <CheckCircle2 className="h-3.5 w-3.5" /> Chain intact · 0 tampered entries
+        <span
+          className={cn(
+            "ml-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11.5px] font-medium ring-1",
+            ledgerOk
+              ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+              : "bg-red-50 text-red-700 ring-red-200"
+          )}
+        >
+          {ledgerOk ? (
+            <>
+              <CheckCircle2 className="h-3.5 w-3.5" /> Chain intact · 0 tampered entries
+            </>
+          ) : (
+            <>
+              <AlertCircle className="h-3.5 w-3.5" /> Chain broken at entry #{brokenAt}
+            </>
+          )}
         </span>
       </div>
 
       <Card>
-        <TableWrap>
-          <thead>
-            <tr className="table-head">
-              <Th>Date</Th>
-              <Th>Narration</Th>
-              <Th>Account</Th>
-              <Th>Ref</Th>
-              <Th className="text-right">Debit</Th>
-              <Th className="text-right">Credit</Th>
-              <Th>Hash</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-ink-100">
-            {rows.map((e) => (
-              <tr
-                key={e.id}
-                className="cursor-pointer hover:bg-ink-50/60"
-                onClick={() => setSelected(e)}
-              >
-                <Td className="whitespace-nowrap text-[12px] text-ink-500">
-                  {formatDate(e.date)}
-                </Td>
-                <Td>
-                  <p className="text-[12.5px] text-ink-800">{e.narration}</p>
-                  <Badge tone={typeTone[e.refType] ?? "slate"} className="mt-0.5">
-                    {e.refType}
-                  </Badge>
-                </Td>
-                <Td className="text-[12px] text-ink-500">{e.account}</Td>
-                <Td>
-                  <span className="font-mono text-[11px] text-ink-600">{e.refNo}</span>
-                </Td>
-                <Td className="text-right text-[12.5px] font-medium text-emerald-700">
-                  {e.debitPaise ? formatINR(e.debitPaise) : "—"}
-                </Td>
-                <Td className="text-right text-[12.5px] font-medium text-red-600">
-                  {e.creditPaise ? formatINR(e.creditPaise) : "—"}
-                </Td>
-                <Td>
-                  <span className="inline-flex items-center gap-1 font-mono text-[10.5px] text-ink-500">
-                    <Link2 className="h-3 w-3" />
-                    {e.hash.slice(0, 10)}…
-                  </span>
-                </Td>
+        {loading && entries.length === 0 ? (
+          <div className="p-10 text-center text-[12.5px] text-ink-500">
+            Ledger load ho raha hai…
+          </div>
+        ) : (
+          <TableWrap>
+            <thead>
+              <tr className="table-head">
+                <Th>Date</Th>
+                <Th>Narration</Th>
+                <Th>Account</Th>
+                <Th>Ref</Th>
+                <Th className="text-right">Debit</Th>
+                <Th className="text-right">Credit</Th>
+                <Th>Hash</Th>
               </tr>
-            ))}
-          </tbody>
-        </TableWrap>
-        {rows.length === 0 && (
+            </thead>
+            <tbody className="divide-y divide-ink-100">
+              {rows.map((e) => (
+                <tr
+                  key={e.id}
+                  className="cursor-pointer hover:bg-ink-50/60"
+                  onClick={() => setSelected(e)}
+                >
+                  <Td className="whitespace-nowrap text-[12px] text-ink-500">
+                    {formatDate(e.date)}
+                  </Td>
+                  <Td>
+                    <p className="text-[12.5px] text-ink-800">{e.narration}</p>
+                    <Badge tone={typeTone[e.refType] ?? "slate"} className="mt-0.5">
+                      {e.refType}
+                    </Badge>
+                  </Td>
+                  <Td className="text-[12px] text-ink-500">{e.account}</Td>
+                  <Td>
+                    <span className="font-mono text-[11px] text-ink-600">{e.refNo}</span>
+                  </Td>
+                  <Td className="text-right text-[12.5px] font-medium text-emerald-700">
+                    {e.debitPaise ? formatINR(e.debitPaise) : "—"}
+                  </Td>
+                  <Td className="text-right text-[12.5px] font-medium text-red-600">
+                    {e.creditPaise ? formatINR(e.creditPaise) : "—"}
+                  </Td>
+                  <Td>
+                    <span className="inline-flex items-center gap-1 font-mono text-[10.5px] text-ink-500">
+                      <Link2 className="h-3 w-3" />
+                      {e.hash.slice(0, 10)}…
+                    </span>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableWrap>
+        )}
+        {!loading && rows.length === 0 && (
           <p className="px-4 py-10 text-center text-sm text-ink-500">
             No ledger entries match your filter.
           </p>
@@ -236,7 +350,7 @@ export default function LedgerPage() {
 
             <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-[12px] text-emerald-800">
               <CheckCircle2 className="h-4 w-4" />
-              This entry&apos;s hash matches its predecessor. Chain verified.
+              This entry is immutable. Corrections are made through a reversal entry.
             </div>
 
             <Button variant="secondary" className="w-full" onClick={() => toast("Reversal draft created")}>

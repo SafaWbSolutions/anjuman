@@ -1,32 +1,33 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
   BadgeCheck,
-  Ban,
   Download,
   Filter,
   IdCard,
   Phone,
   Plus,
+  RefreshCw,
   Search,
   UserPlus,
   Users,
   Wallet,
   X,
 } from "lucide-react";
+import { activeTenant } from "@/lib/mock";
+import type { Invoice, Member, Payment, Tenant } from "@/lib/types";
 import {
-  members,
-  invoices,
-  payments,
-  duesForMember,
-  dueTotal,
-  memberByCode,
-  paymentsForMember,
-  activeTenant,
-} from "@/lib/mock";
-import type { Member } from "@/lib/types";
-import { formatINR, formatDate, periodLabel, cn, currentPeriod } from "@/lib/utils";
+  createMember,
+  generateInvoices,
+  getCurrentTenant,
+  listInvoices,
+  listMembers,
+  listPayments,
+} from "@/lib/repo";
+import { isDemoMode } from "@/lib/supabase";
+import { formatINR, formatDate, periodLabel, cn } from "@/lib/utils";
 import {
   Avatar,
   Badge,
@@ -46,7 +47,15 @@ import {
   toast,
 } from "@/components/ui";
 
-const MOHALLAS = Array.from(new Set(members.map((m) => m.mohalla)));
+function toCsv(rows: Member[]): string {
+  const head = ["Member ID", "Name", "Father", "House", "Mohalla", "Phone", "Type", "Status", "Monthly (paise)"];
+  const body = rows.map((m) =>
+    [m.code, m.name, m.fatherName, m.household, m.mohalla, m.phone, m.type, m.status, String(m.feePaise)]
+      .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`)
+      .join(",")
+  );
+  return [head.join(","), ...body].join("\r\n");
+}
 
 export default function MembersPage() {
   const [q, setQ] = useState("");
@@ -55,6 +64,55 @@ export default function MembersPage() {
   const [type, setType] = useState("all");
   const [selected, setSelected] = useState<Member | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+
+  const [members, setMembers] = useState<Member[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [memberRows, invoiceRows, paymentRows, tenantRow] = await Promise.all([
+        listMembers(),
+        listInvoices(),
+        listPayments(),
+        getCurrentTenant(),
+      ]);
+      setMembers(memberRows);
+      setInvoices(invoiceRows);
+      setPayments(paymentRows);
+      setTenant(tenantRow);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Members load nahi ho sake");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const mohallas = useMemo(
+    () => Array.from(new Set(members.map((m) => m.mohalla).filter(Boolean))),
+    [members]
+  );
+
+  const dueTotalOf = useCallback(
+    (memberId: string) =>
+      invoices
+        .filter(
+          (i) =>
+            i.memberId === memberId &&
+            (i.status === "pending" || i.status === "partial")
+        )
+        .reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0),
+    [invoices]
+  );
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -70,22 +128,40 @@ export default function MembersPage() {
         m.household.toLowerCase() === term
       );
     });
-  }, [q, mohalla, status, type]);
+  }, [members, q, mohalla, status, type]);
 
-  const exactIdMatch = q.trim().length > 5 ? memberByCode(q.trim().toUpperCase()) : undefined;
+  const exactIdMatch =
+    q.trim().length > 5
+      ? members.find((m) => m.code.toLowerCase() === q.trim().toLowerCase())
+      : undefined;
+
+  function exportCsv() {
+    const csv = toCsv(filtered);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `members-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast(`${filtered.length} members exported as CSV`);
+  }
+
+  const tenantName = tenant?.name ?? activeTenant.name;
+  const village = tenant?.village ?? activeTenant.village;
 
   return (
     <>
       <PageHeader
         eyebrow="Community"
         title="Members"
-        description={`${members.length} registered members across ${new Set(members.map((m) => m.household)).size} households in ${activeTenant.village}.`}
+        description={`${members.length} registered members across ${new Set(members.map((m) => m.household).filter(Boolean)).size} households in ${village}.`}
         actions={
           <>
-            <Button
-              variant="secondary"
-              onClick={() => toast("Member list exported as CSV")}
-            >
+            <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
+              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} /> Refresh
+            </Button>
+            <Button variant="secondary" onClick={exportCsv} disabled={filtered.length === 0}>
               <Download className="h-4 w-4" /> Export
             </Button>
             <Button onClick={() => setAddOpen(true)}>
@@ -94,6 +170,16 @@ export default function MembersPage() {
           </>
         }
       />
+
+      {error && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-[12.5px] text-red-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button className="font-semibold underline" onClick={() => void load()}>
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* ── Member ID quick lookup ──────────────────────────── */}
       <Card className="mb-5 overflow-hidden">
@@ -107,7 +193,7 @@ export default function MembersPage() {
                 Find by Member ID
               </p>
               <p className="text-[11.5px] text-ink-500">
-                Any member of any anjuman — e.g. BHR-000012-4
+                Any member of this anjuman — e.g. BHR-000012-4
               </p>
             </div>
           </div>
@@ -146,7 +232,7 @@ export default function MembersPage() {
           className="h-9 w-auto py-1.5 text-[12.5px]"
         >
           <option value="all">All mohallas</option>
-          {MOHALLAS.map((m) => (
+          {mohallas.map((m) => (
             <option key={m} value={m}>
               {m}
             </option>
@@ -195,7 +281,11 @@ export default function MembersPage() {
 
       {/* ── Table ───────────────────────────────────────────── */}
       <Card>
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="p-10 text-center text-[12.5px] text-ink-500">
+            Members load ho rahe hain…
+          </div>
+        ) : filtered.length === 0 ? (
           <EmptyState
             icon={Users}
             title="No members match your filters"
@@ -230,7 +320,7 @@ export default function MembersPage() {
             </thead>
             <tbody className="divide-y divide-ink-100">
               {filtered.map((m) => {
-                const due = dueTotal(m.id);
+                const due = dueTotalOf(m.id);
                 return (
                   <tr
                     key={m.id}
@@ -297,8 +387,24 @@ export default function MembersPage() {
         )}
       </Card>
 
-      <MemberDrawer member={selected} onClose={() => setSelected(null)} />
-      <AddMemberDrawer open={addOpen} onClose={() => setAddOpen(false)} />
+      <MemberDrawer
+        member={selected}
+        invoices={invoices}
+        payments={payments}
+        tenantName={tenantName}
+        onClose={() => setSelected(null)}
+      />
+      <AddMemberDrawer
+        open={addOpen}
+        mohallas={mohallas}
+        defaultFee={500}
+        onClose={() => setAddOpen(false)}
+        onSaved={async (member) => {
+          setMembers((prev) => [...prev, member].sort((a, b) => a.code.localeCompare(b.code)));
+          setAddOpen(false);
+          if (!isDemoMode) await load();
+        }}
+      />
     </>
   );
 }
@@ -307,17 +413,29 @@ export default function MembersPage() {
 
 function MemberDrawer({
   member,
+  invoices,
+  payments,
+  tenantName,
   onClose,
 }: {
   member: Member | null;
+  invoices: Invoice[];
+  payments: Payment[];
+  tenantName: string;
   onClose: () => void;
 }) {
   if (!member) return null;
-  const dues = duesForMember(member.id);
-  const pays = paymentsForMember(member.id);
+
+  const dues = invoices.filter(
+    (i) =>
+      i.memberId === member.id &&
+      (i.status === "pending" || i.status === "partial")
+  );
+  const pays = payments.filter((p) => p.memberId === member.id);
   const paidTotal = invoices
     .filter((i) => i.memberId === member.id)
     .reduce((s, i) => s + i.paidPaise, 0);
+  const dueTotal = dues.reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0);
 
   return (
     <Drawer
@@ -330,7 +448,7 @@ function MemberDrawer({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-[12px] text-ink-500">
             Belongs to{" "}
-            <span className="font-medium text-ink-700">{activeTenant.name}</span>
+            <span className="font-medium text-ink-700">{tenantName}</span>
           </p>
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={() => toast("ID card queued for printing")}>
@@ -352,7 +470,7 @@ function MemberDrawer({
             <Badge tone="slate">{member.type}</Badge>
           </div>
           <p className="mt-0.5 text-[12.5px] text-ink-500">
-            s/o {member.fatherName} · House #{member.household}
+            s/o {member.fatherName || "—"} · House #{member.household || "—"}
           </p>
         </div>
         <div className="rounded-xl border border-ink-200 bg-white px-3 py-2 text-center">
@@ -369,7 +487,7 @@ function MemberDrawer({
         {[
           { label: "Monthly fee", value: member.feePaise === 0 ? "Waived" : formatINR(member.feePaise) },
           { label: "Total paid", value: formatINR(paidTotal) },
-          { label: "Outstanding", value: dueTotal(member.id) > 0 ? formatINR(dueTotal(member.id)) : "Clear" },
+          { label: "Outstanding", value: dueTotal > 0 ? formatINR(dueTotal) : "Clear" },
           { label: "Joined", value: formatDate(member.joinedOn) },
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-ink-100 p-3">
@@ -390,13 +508,13 @@ function MemberDrawer({
           </p>
           <div className="space-y-1.5 text-[12.5px]">
             <p className="flex items-center gap-2 text-ink-700">
-              <Phone className="h-3.5 w-3.5 text-ink-400" /> {member.phone}
+              <Phone className="h-3.5 w-3.5 text-ink-400" /> {member.phone || "—"}
             </p>
             <p className="text-ink-500">
               Blood group: <span className="font-medium text-ink-800">{member.bloodGroup ?? "—"}</span>
             </p>
             <p className="text-ink-500">
-              Mohalla: <span className="font-medium text-ink-800">{member.mohalla}</span>
+              Mohalla: <span className="font-medium text-ink-800">{member.mohalla || "—"}</span>
             </p>
           </div>
         </div>
@@ -418,7 +536,7 @@ function MemberDrawer({
             Dues ({dues.length})
           </p>
           <p className="text-[12px] font-medium text-amber-700">
-            {formatINR(dueTotal(member.id))}
+            {formatINR(dueTotal)}
           </p>
         </div>
         {dues.length === 0 ? (
@@ -482,25 +600,70 @@ function MemberDrawer({
 
 /* ── Add member drawer ───────────────────────────────────────── */
 
-function AddMemberDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AddMemberDrawer({
+  open,
+  mohallas,
+  defaultFee,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  mohallas: string[];
+  defaultFee: number;
+  onClose: () => void;
+  onSaved: (member: Member) => void | Promise<void>;
+}) {
   const [name, setName] = useState("");
   const [father, setFather] = useState("");
   const [phone, setPhone] = useState("");
   const [house, setHouse] = useState("");
-  const [mohalla, setMohalla] = useState(MOHALLAS[0]);
-  const [fee, setFee] = useState("500");
+  const [mohalla, setMohalla] = useState(mohallas[0] ?? "");
+  const [fee, setFee] = useState(String(defaultFee));
+  const [memberType, setMemberType] = useState<Member["type"]>("member");
+  const [saving, setSaving] = useState(false);
 
-  function save() {
+  async function save() {
     if (!name.trim() || !phone.trim()) {
       toast("Name and phone are required", "error");
       return;
     }
-    toast(`Member “${name}” added · ID will be issued automatically`);
-    setName("");
-    setFather("");
-    setPhone("");
-    setHouse("");
-    onClose();
+    const feePaise = Math.round(Number(fee || "0") * 100);
+    if (!Number.isFinite(feePaise) || feePaise < 0) {
+      toast("Monthly chanda is not a valid amount", "error");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const member = await createMember({
+        name,
+        fatherName: father,
+        phone,
+        household: house,
+        mohalla,
+        memberType,
+        feePaise,
+      });
+
+      // Give the new member their first invoice straight away so dues
+      // and reminders start from this month.
+      try {
+        await generateInvoices();
+      } catch {
+        /* invoice generation is idempotent — safe to retry later */
+      }
+
+      toast(`Member “${member.name}” added · ${member.code}`);
+      setName("");
+      setFather("");
+      setPhone("");
+      setHouse("");
+      await onSaved(member);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Member save nahi hua", "error");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -511,11 +674,11 @@ function AddMemberDrawer({ open, onClose }: { open: boolean; onClose: () => void
       subtitle="A unique member ID is generated automatically on save."
       footer={
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={save}>
-            <Plus className="h-4 w-4" /> Save member
+          <Button onClick={() => void save()} disabled={saving}>
+            <Plus className="h-4 w-4" /> {saving ? "Saving…" : "Save member"}
           </Button>
         </div>
       }
@@ -552,7 +715,8 @@ function AddMemberDrawer({ open, onClose }: { open: boolean; onClose: () => void
         </Field>
         <Field label="Mohalla">
           <Select value={mohalla} onChange={(e) => setMohalla(e.target.value)}>
-            {MOHALLAS.map((m) => (
+            {mohallas.length === 0 && <option value="">—</option>}
+            {mohallas.map((m) => (
               <option key={m} value={m}>
                 {m}
               </option>
@@ -570,7 +734,10 @@ function AddMemberDrawer({ open, onClose }: { open: boolean; onClose: () => void
           />
         </Field>
         <Field label="Member type">
-          <Select defaultValue="member">
+          <Select
+            value={memberType}
+            onChange={(e) => setMemberType(e.target.value as Member["type"])}
+          >
             <option value="member">Member</option>
             <option value="donor">Donor</option>
             <option value="imam">Imam</option>

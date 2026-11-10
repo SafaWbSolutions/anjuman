@@ -11,7 +11,8 @@ import React, {
 import type { Role, SessionUser } from "./types";
 import { ROLE_LABEL } from "./types";
 import { activeTenant } from "./mock";
-import { isSupabaseConfigured, supabase } from "./supabase";
+import { isDemoMode, supabase } from "./supabase";
+import { loadSessionUser } from "./session";
 
 const STORAGE_KEY = "anjuman.session";
 
@@ -96,17 +97,58 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
-  const demoMode = !isSupabaseConfigured;
+  const demoMode = isDemoMode;
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) setUser(JSON.parse(raw) as SessionUser);
-    } catch {
-      /* ignore corrupted session */
+    let cancelled = false;
+
+    async function restore() {
+      // Demo: restore the picked role from localStorage.
+      if (demoMode) {
+        try {
+          const raw = window.localStorage.getItem(STORAGE_KEY);
+          if (raw) setUser(JSON.parse(raw) as SessionUser);
+        } catch {
+          /* ignore corrupted session */
+        }
+        if (!cancelled) setReady(true);
+        return;
+      }
+
+      // Real mode: trust Supabase's own persisted session, then read
+      // the role from `profiles` (never from user_metadata).
+      if (!supabase) {
+        if (!cancelled) setReady(true);
+        return;
+      }
+
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data.session?.user) {
+          const sessionUser = await loadSessionUser(data.session.user.id);
+          if (sessionUser && !cancelled) {
+            sessionUser.email = data.session.user.email ?? "";
+            setUser(sessionUser);
+          }
+        }
+      } catch {
+        /* expired or revoked token — stay signed out */
+      } finally {
+        if (!cancelled) setReady(true);
+      }
     }
-    setReady(true);
-  }, []);
+
+    void restore();
+
+    const subscription = supabase?.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") setUser(null);
+    });
+
+    return () => {
+      cancelled = true;
+      subscription?.data.subscription.unsubscribe();
+    };
+  }, [demoMode]);
 
   const persist = useCallback((u: SessionUser | null) => {
     setUser(u);
@@ -127,22 +169,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password: password ?? "",
       });
       if (error) throw error;
-      const meta = (data.user?.user_metadata ?? {}) as {
-        full_name?: string;
-        role?: Role;
-        tenant_id?: string;
-      };
-      persist({
-        id: data.user!.id,
-        name: meta.full_name ?? data.user!.email ?? "User",
-        phone: (data.user?.phone as string) ?? "",
-        email: data.user?.email ?? "",
-        role: (meta.role as Role) ?? "member",
-        tenantId: meta.tenant_id ?? null,
-        tenantName: "",
-      });
+      if (!data.user || !data.session) {
+        throw new Error("Email confirm nahi hua. Apna inbox check karein, phir login karein.");
+      }
+
+      const sessionUser = await loadSessionUser(data.user.id);
+      if (!sessionUser) {
+        await supabase.auth.signOut();
+        throw new Error("Is account ka koi profile nahi mila. Sadar se sampark karein.");
+      }
+      sessionUser.email = data.user.email ?? "";
+      setUser(sessionUser);
     },
-    [demoMode, persist]
+    [demoMode]
   );
 
   const signOut = useCallback(async () => {

@@ -64,11 +64,19 @@ NEXT_PUBLIC_DEMO_MODE=false
 ```
 
 Then run the SQL in `supabase/migrations/` in order, followed by `supabase/seed.sql`.
+The automation layer (Edge Functions, cron, webhooks) has its own step-by-step
+guide in **[docs/AUTOMATION.md](docs/AUTOMATION.md)**.
 
 ```bash
 npm run build      # static export → out/
 npm run typecheck  # tsc --noEmit
+npm run test:sql   # migrations + money-flow tests in PGlite (real Postgres)
 ```
+
+`npm run test:sql` runs the actual migration files in an in-memory Postgres and then
+asserts the security promises: tenant isolation, maker–checker, immutable amounts,
+self-approval block, idempotent invoices, reversals and a valid ledger chain. It needs
+no database, no Docker and no network. CI runs it before every deploy.
 
 ---
 
@@ -103,9 +111,17 @@ src/app/
       plans/                 free / fixed / custom plans
       billing/               platform subscription billing
 supabase/
-  migrations/                schema, RLS, functions (IDs, receipts, ledger)
+  migrations/                0001 schema · 0002 RLS · 0003 functions · 0004 automation
   seed.sql                   demo tenant
+  functions/
+    send-queue/              drains the WhatsApp/SMS/email/push queue
+    payment-webhook/         Razorpay / Cashfree / PhonePe reconciliation
+    nightly/                 invoices, reminders, expiry, ledger check
+    admin-test/              "paste keys → test → enable"
+  config.toml                per-function JWT settings
+  tests/sql-tests.mjs        migrations + money-flow tests (PGlite)
 .github/workflows/           deploy + nightly backup
+docs/AUTOMATION.md           cron, secrets, webhook URLs, troubleshooting
 ```
 
 ---
@@ -120,8 +136,9 @@ supabase/
 3. **No self-approval.** Enforced by table checks (`verified_by <> entered_by`,
    `decided_by <> requested_by`) *and* by the RPCs.
 4. **Anon key only in the browser.** `service_role` never ships to the client.
-5. **Secrets encrypted at rest.** Gateway keys live in the `integrations` table with a
-   `secret_ref`, and are never returned to the client after saving.
+5. **Secrets stay server-side.** Gateway / WhatsApp / SMS keys live in
+   `integration_secrets`, a table with no `anon` or `authenticated` access at all.
+   Edge Functions read them with the service key; the panel only ever sends keys in.
 
 ---
 
@@ -144,10 +161,12 @@ platform commission on member payments.
 
 - [x] Web admin panel (this repo)
 - [x] Multi-tenant schema + RLS + ledger functions
+- [x] Public member lookup page (`/verify?id=…`) for ID-card QR codes
+- [x] Edge Functions: WhatsApp/SMS/email sender, payment webhooks, nightly reconciliation
+- [ ] Panel wiring for integration keys + test button (UI reads/writes through `save_integration_secret`)
 - [ ] Android app (single app, role-based navigation)
-- [ ] Public member lookup page (`/verify?id=…`) for ID-card QR codes
-- [ ] Edge Functions: WhatsApp sender, payment webhooks, nightly reconciliation
 - [ ] Bulk PDF ID cards (server-side, print-shop ready)
+- [ ] Platform subscription auto-billing through the same webhook layer
 
 ---
 

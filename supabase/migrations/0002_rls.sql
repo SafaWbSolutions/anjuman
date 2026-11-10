@@ -107,7 +107,7 @@ declare
   t text;
   tables text[] := array[
     'members','fee_plans','fee_overrides','invoices','receipt_sequences',
-    'payments','payment_allocations','funds','expenses','ledger_entries',
+    'payments','funds','expenses','ledger_entries',
     'ledger_seals','approvals','complaints','notices','prayer_days','integrations'
   ];
 begin
@@ -147,6 +147,21 @@ begin
     );
   end loop;
 end $$;
+
+-- ── Payment allocations ────────────────────────────────────────
+-- This table has no tenant_id; it inherits the tenant from its
+-- parent payment. Reads are allowed through that join, writes are
+-- never allowed from a browser (only the verification RPC writes).
+drop policy if exists payment_allocations_read on public.payment_allocations;
+create policy payment_allocations_read on public.payment_allocations
+  for select using (
+    public.is_super_admin()
+    or exists (
+      select 1 from public.payments p
+      where p.id = payment_id
+        and p.tenant_id = public.current_tenant_id()
+    )
+  );
 
 -- ── Append-only tables: no update / delete for anyone ───────────
 -- (Cleanup happens only through a privileged service_role job.)

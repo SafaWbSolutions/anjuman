@@ -1,0 +1,22 @@
+# ═══════════════════════════════════════════════════════════════
+# Supabase CLI configuration
+#
+# The three job/webhook functions authenticate inside the function
+# (CRON_SECRET / gateway signature), so the platform JWT check is
+# switched off for them. admin-test keeps verify_jwt = true because
+# it acts on behalf of a signed-in office bearer.
+# ═══════════════════════════════════════════════════════════════
+
+project_id = "anjuman"
+
+[functions.send-queue]
+verify_jwt = false
+
+[functions.payment-webhook]
+verify_jwt = false
+
+[functions.nightly]
+verify_jwt = false
+
+[functions.admin-test]
+verify_jwt = true

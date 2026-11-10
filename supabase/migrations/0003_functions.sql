@@ -226,15 +226,15 @@ declare
   v_receipt text;
   v_left   bigint;
 begin
-  if v_role not in ('sadar','khajanchi','auditor') then
+  if coalesce(v_role in ('sadar','khajanchi','auditor'), false) is not true then
     raise exception 'Not allowed to verify payments';
   end if;
 
   select * into p from public.payments where id = p_payment_id for update;
   if not found then raise exception 'Payment not found'; end if;
-  if p.tenant_id <> v_tenant then raise exception 'Wrong tenant'; end if;
+  if p.tenant_id is distinct from v_tenant then raise exception 'Wrong tenant'; end if;
   if p.status <> 'pending' then raise exception 'Payment already %, not pending', p.status; end if;
-  if p.entered_by = auth.uid() then
+  if p.entered_by is not distinct from auth.uid() then
     raise exception 'Maker cannot verify their own entry';
   end if;
 
@@ -297,15 +297,15 @@ declare
   f        public.funds;
   v_role   app_role := public.current_role();
 begin
-  if v_role not in ('sadar','auditor') then
+  if coalesce(v_role in ('sadar','auditor'), false) is not true then
     raise exception 'Only the sadar or auditor can approve expenses';
   end if;
 
   select * into e from public.expenses where id = p_expense_id for update;
   if not found then raise exception 'Expense not found'; end if;
-  if e.tenant_id <> public.current_tenant_id() then raise exception 'Wrong tenant'; end if;
+  if e.tenant_id is distinct from public.current_tenant_id() then raise exception 'Wrong tenant'; end if;
   if e.status <> 'pending' then raise exception 'Expense is not pending'; end if;
-  if e.entered_by = auth.uid() then raise exception 'Maker cannot approve their own expense'; end if;
+  if e.entered_by is not distinct from auth.uid() then raise exception 'Maker cannot approve their own expense'; end if;
 
   select * into f from public.funds where id = e.fund_id for update;
   if f.balance_paise < e.amount_paise then
@@ -344,7 +344,7 @@ declare
   v_total  bigint := 0;
   v_id     uuid;
 begin
-  if public.current_role() not in ('sadar','secretary') then
+  if coalesce(public.current_role() in ('sadar','secretary'), false) is not true then
     raise exception 'Not allowed to request waivers';
   end if;
 
@@ -403,3 +403,14 @@ create trigger audit_approvals after insert or update on public.approvals
 drop trigger if exists audit_ledger on public.ledger_entries;
 create trigger audit_ledger after insert on public.ledger_entries
   for each row execute function public.audit_row();
+
+-- ── Explicit grants ─────────────────────────────────────────────
+-- Functions are executable by PUBLIC by default. Close that off:
+-- only a signed-in tenant user (or the server) may call these.
+revoke all on function public.verify_payment(uuid) from public, anon;
+revoke all on function public.approve_expense(uuid) from public, anon;
+revoke all on function public.request_waiver(uuid, text[], text) from public, anon;
+
+grant execute on function public.verify_payment(uuid) to authenticated;
+grant execute on function public.approve_expense(uuid) to authenticated;
+grant execute on function public.request_waiver(uuid, text[], text) to authenticated;

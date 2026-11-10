@@ -8,7 +8,8 @@
     "build": "next build",
     "preview": "npx serve out",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:sql": "node supabase/tests/sql-tests.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -21,6 +22,7 @@
     "tailwind-merge": "^3.0.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
     "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^22.10.0",
     "@types/qrcode": "^1.5.5",

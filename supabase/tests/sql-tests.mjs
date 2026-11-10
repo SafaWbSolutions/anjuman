@@ -32,6 +32,9 @@ const files = [
   "supabase/migrations/0004_automation.sql",
   "supabase/migrations/0005_workflows.sql",
   "supabase/migrations/0006_expense_reject.sql",
+  "supabase/migrations/0007_fee_change.sql",
+  "supabase/migrations/0008_complaint_workflow.sql",
+  "supabase/migrations/0009_prayer_location.sql",
   "supabase/seed.sql",
 ];
 
@@ -365,6 +368,35 @@ await asUser(U_SADAR, "authenticated", `select public.approve_fee_override($$${O
 const approved = await db.query(`select approved_by from public.fee_overrides where id = $$${OVERRIDE}$$`);
 check("sadar can approve override", approved.rows[0].approved_by === U_SADAR);
 
+// 14b. Changing an approved fee goes through the request RPC.
+const feeReq = await asUser(U_KHAJ, "authenticated", `
+  select public.request_fee_change($$${MEMBER}$$, 25000, 'hardship review') as id
+`);
+const FEE_APPROVAL = feeReq.rows[0].id;
+const feeReset = await db.query(`select approved_by, amount_paise from public.fee_overrides where id = $$${OVERRIDE}$$`);
+check("fee change reopens the override", feeReset.rows[0].approved_by === null, JSON.stringify(feeReset.rows[0]));
+check("fee change stores the new amount", Number(feeReset.rows[0].amount_paise) === 25000, String(feeReset.rows[0].amount_paise));
+
+let selfFee = "";
+try {
+  await asUser(U_KHAJ, "authenticated", `select public.decide_approval($$${FEE_APPROVAL}$$, true, 'self')`);
+} catch (error) {
+  selfFee = error.message;
+}
+check("maker cannot decide their own fee change", selfFee.includes("Maker cannot decide"), selfFee);
+
+await asUser(U_SEC, "authenticated", `select public.decide_approval($$${FEE_APPROVAL}$$, true, 'ok')`);
+const feeApproved = await db.query(`select approved_by, amount_paise from public.fee_overrides where id = $$${OVERRIDE}$$`);
+check("second bearer approves the new fee", feeApproved.rows[0].approved_by === U_SEC, JSON.stringify(feeApproved.rows[0]));
+
+let lockedFee = "";
+try {
+  await asUser(U_SADAR, "authenticated", `update public.fee_overrides set amount_paise = 1 where id = $$${OVERRIDE}$$`);
+} catch (error) {
+  lockedFee = error.message;
+}
+check("an approved fee override is locked", lockedFee.includes("locked"), lockedFee);
+
 // 15. Queue worker primitives.
 const claimed = await asService(`select * from public.claim_notifications(10)`);
 check("service can claim queued messages", claimed.rows.length >= 1, `rows=${claimed.rows.length}`);
@@ -441,6 +473,62 @@ const fundAfter = await db.query(`select balance_paise from public.funds where i
 const ledgerAfter = await db.query(`select count(*)::int as n from public.ledger_entries where tenant_id = $$${BHR}$$`);
 check("rejection leaves the fund untouched", Number(fundAfter.rows[0].balance_paise) === Number(fundBefore), `${fundBefore} -> ${fundAfter.rows[0].balance_paise}`);
 check("rejection writes no ledger entry", ledgerAfter.rows[0].n === ledgerBefore.rows[0].n, `${ledgerBefore.rows[0].n} -> ${ledgerAfter.rows[0].n}`);
+
+// 15d. A complaint gets its own tracking code and only office can triage it.
+const complaintIns = await asUser(U_MEMBER, "authenticated", `
+  insert into public.complaints (tenant_id, category, subject, body, anonymous)
+  values ($$${BHR}$$, 'Finance', 'Receipt missing', 'I paid in October but got no receipt.', false)
+  returning id, tracking_code, status
+`);
+const COMPLAINT = complaintIns.rows[0].id;
+check(
+  "member complaint gets a tracking code",
+  /^CMP-[0-9A-F]{6}$/.test(complaintIns.rows[0].tracking_code),
+  complaintIns.rows[0].tracking_code
+);
+check("new complaint starts open", complaintIns.rows[0].status === "open");
+
+await asUser(U_MEMBER, "authenticated", `
+  update public.complaints set status = 'resolved' where id = $$${COMPLAINT}$$
+`);
+const stillOpen = await db.query(`select status from public.complaints where id = $$${COMPLAINT}$$`);
+check("member cannot resolve someone else's complaint", stillOpen.rows[0].status === "open", stillOpen.rows[0].status);
+
+await asUser(U_SADAR, "authenticated", `
+  update public.complaints set status = 'resolved' where id = $$${COMPLAINT}$$
+`);
+const resolved = await db.query(`select status, resolved_at from public.complaints where id = $$${COMPLAINT}$$`);
+check("office bearer can resolve a complaint", resolved.rows[0].status === "resolved", resolved.rows[0].status);
+check("resolution time is stamped", resolved.rows[0].resolved_at !== null, String(resolved.rows[0].resolved_at));
+
+// 15e. Prayer timetable: coordinates are office-only, days persist.
+await asUser(U_SADAR, "authenticated", `
+  update public.tenants set latitude = 26.07, longitude = 83.19 where id = $$${BHR}$$
+`);
+const geo = await db.query(`select latitude, longitude, timezone from public.tenants where id = $$${BHR}$$`);
+check("sadar can set masjid coordinates", Number(geo.rows[0].latitude) === 26.07, String(geo.rows[0].latitude));
+check("tenant keeps a timezone", geo.rows[0].timezone === "Asia/Kolkata", geo.rows[0].timezone);
+
+await asUser(U_MEMBER, "authenticated", `
+  update public.tenants set latitude = 0 where id = $$${BHR}$$
+`);
+const geoMember = await db.query(`select latitude from public.tenants where id = $$${BHR}$$`);
+check("member cannot move the masjid", Number(geoMember.rows[0].latitude) === 26.07, String(geoMember.rows[0].latitude));
+
+await asUser(U_SADAR, "authenticated", `
+  insert into public.prayer_days
+    (tenant_id, date, hijri, fajr, zuhr, asr, maghrib, isha, jumuah, source)
+  values
+    ($$${BHR}$$, '2026-11-13', 'Jumada al-Awwal 2, 1448',
+     '05:02', '11:58', '15:10', '17:22', '18:40', '12:20', 'manual')
+  on conflict (tenant_id, date) do update
+    set fajr = excluded.fajr, source = excluded.source
+`);
+const prayer = await db.query(`
+  select fajr, source from public.prayer_days
+  where tenant_id = $$${BHR}$$ and date = '2026-11-13'
+`);
+check("office bearer can save a prayer day", prayer.rows[0]?.source === "manual", JSON.stringify(prayer.rows[0]));
 
 // 16. Null role / null tenant must never bypass a permission check.
 const pending = await asService(`

@@ -23,6 +23,7 @@ import {
   notices as mockNotices,
   payments as mockPayments,
   pendingPayments as mockPendingPayments,
+  prayerDays as mockPrayerDays,
   stats as mockStats,
   tenants as mockTenants,
 } from "./mock";
@@ -30,12 +31,15 @@ import type {
   Approval,
   Complaint,
   Expense,
+  FeeOverride,
+  FeePlan,
   Fund,
   Invoice,
   LedgerEntry,
   Member,
   Notice,
   Payment,
+  PrayerDay,
   Tenant,
 } from "./types";
 
@@ -121,6 +125,9 @@ function toTenant(r: Row): Tenant {
     expiresAt: r.expires_at ?? null,
     membersCount: num(r.members_count),
     createdAt: r.created_at,
+    latitude: r.latitude === null || r.latitude === undefined ? null : num(r.latitude),
+    longitude: r.longitude === null || r.longitude === undefined ? null : num(r.longitude),
+    timezone: r.timezone ?? "Asia/Kolkata",
   };
 }
 
@@ -269,6 +276,101 @@ function toApproval(r: Row, names: Map<string, string>): Approval {
   };
 }
 
+function toFeePlan(r: Row): FeePlan {
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    name: r.name,
+    amountPaise: num(r.amount_paise),
+    cycle: r.cycle,
+    dueDay: num(r.due_day, 10),
+    graceDays: num(r.grace_days, 5),
+    isActive: Boolean(r.is_active),
+    createdAt: r.created_at,
+  };
+}
+
+function toFeeOverride(r: Row): FeeOverride {
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    memberId: r.member_id,
+    amountPaise: num(r.amount_paise),
+    reason: r.reason,
+    approvedBy: r.approved_by ?? undefined,
+    approvedAt: r.approved_at ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+// Sample plans / overrides for demo mode. Live mode reads the real rows.
+const demoFeePlans: FeePlan[] = [
+  {
+    id: "pl-1",
+    tenantId: "t-bhr",
+    name: "Standard monthly chanda",
+    amountPaise: 50000,
+    cycle: "monthly",
+    dueDay: 10,
+    graceDays: 5,
+    isActive: true,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "pl-2",
+    tenantId: "t-bhr",
+    name: "Donor / supporter",
+    amountPaise: 100000,
+    cycle: "monthly",
+    dueDay: 10,
+    graceDays: 5,
+    isActive: true,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "pl-3",
+    tenantId: "t-bhr",
+    name: "Reduced (senior / widow)",
+    amountPaise: 30000,
+    cycle: "monthly",
+    dueDay: 10,
+    graceDays: 5,
+    isActive: true,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  },
+];
+
+const demoFeeOverrides: FeeOverride[] = [
+  {
+    id: "fo-1",
+    tenantId: "t-bhr",
+    memberId: mockMembers[5]?.id ?? "m-6",
+    amountPaise: 25000,
+    reason: "Senior citizen concession",
+    approvedBy: "u-sadar",
+    approvedAt: "2026-02-01T00:00:00.000Z",
+    createdAt: "2026-02-01T00:00:00.000Z",
+  },
+  {
+    id: "fo-2",
+    tenantId: "t-bhr",
+    memberId: mockMembers[10]?.id ?? "m-11",
+    amountPaise: 100000,
+    reason: "Business owner — voluntary higher",
+    approvedBy: "u-sadar",
+    approvedAt: "2026-02-01T00:00:00.000Z",
+    createdAt: "2026-02-01T00:00:00.000Z",
+  },
+  {
+    id: "fo-3",
+    tenantId: "t-bhr",
+    memberId: mockMembers[26]?.id ?? "m-27",
+    amountPaise: 25000,
+    reason: "Medical hardship — awaiting approval",
+    createdAt: "2026-11-01T00:00:00.000Z",
+  },
+];
+
 // ── Reads ───────────────────────────────────────────────────────
 export async function listMembers(): Promise<Member[]> {
   if (isDemoMode) return mockMembers;
@@ -294,6 +396,187 @@ export async function getCurrentTenant(): Promise<Tenant | null> {
 
   if (error) throw error;
   return data ? toTenant(data) : null;
+}
+
+export interface TenantSettings {
+  autoGenerateInvoices: boolean;
+  autoSendReminders: boolean;
+  autoVerifyGateway: boolean;
+  reminderDays: number[];
+  invoiceDueDay: number;
+  receiptFooter: string;
+  calcMethod: string;
+  fajrAngle: number;
+  ishaAngle: number;
+  asrFactor: number;
+  iqamahOffset: number;
+  prayerReminders: boolean;
+  jumuahAlert: boolean;
+}
+
+const demoSettings: TenantSettings = {
+  autoGenerateInvoices: true,
+  autoSendReminders: true,
+  autoVerifyGateway: true,
+  reminderDays: [3, 7, 10, 15],
+  invoiceDueDay: 10,
+  receiptFooter: "",
+  calcMethod: "karachi",
+  fajrAngle: 18,
+  ishaAngle: 18,
+  asrFactor: 2,
+  iqamahOffset: 10,
+  prayerReminders: true,
+  jumuahAlert: true,
+};
+
+export async function getTenantSettings(): Promise<TenantSettings> {
+  if (isDemoMode) return demoSettings;
+
+  const { data, error } = await client()
+    .from("tenant_settings")
+    .select("*")
+    .eq("tenant_id", await myTenantId())
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return demoSettings;
+
+  return {
+    autoGenerateInvoices: Boolean(data.auto_generate_invoices),
+    autoSendReminders: Boolean(data.auto_send_reminders),
+    autoVerifyGateway: Boolean(data.auto_verify_gateway),
+    reminderDays: (data.reminder_days ?? demoSettings.reminderDays).map((d: unknown) => num(d)),
+    invoiceDueDay: num(data.invoice_due_day, 10),
+    receiptFooter: data.receipt_footer ?? "",
+    calcMethod: data.calc_method ?? "karachi",
+    fajrAngle: num(data.fajr_angle, 18),
+    ishaAngle: num(data.isha_angle, 18),
+    asrFactor: num(data.asr_factor, 2),
+    iqamahOffset: num(data.iqamah_offset, 10),
+    prayerReminders: Boolean(data.prayer_reminders ?? true),
+    jumuahAlert: Boolean(data.jumuah_alert ?? true),
+  };
+}
+
+export async function saveTenantSettings(patch: Partial<TenantSettings>): Promise<void> {
+  if (isDemoMode) return;
+
+  const row: Row = {};
+  if (patch.autoGenerateInvoices !== undefined) row.auto_generate_invoices = patch.autoGenerateInvoices;
+  if (patch.autoSendReminders !== undefined) row.auto_send_reminders = patch.autoSendReminders;
+  if (patch.autoVerifyGateway !== undefined) row.auto_verify_gateway = patch.autoVerifyGateway;
+  if (patch.reminderDays !== undefined) row.reminder_days = patch.reminderDays;
+  if (patch.invoiceDueDay !== undefined) row.invoice_due_day = patch.invoiceDueDay;
+  if (patch.receiptFooter !== undefined) row.receipt_footer = patch.receiptFooter;
+  if (patch.calcMethod !== undefined) row.calc_method = patch.calcMethod;
+  if (patch.fajrAngle !== undefined) row.fajr_angle = patch.fajrAngle;
+  if (patch.ishaAngle !== undefined) row.isha_angle = patch.ishaAngle;
+  if (patch.asrFactor !== undefined) row.asr_factor = patch.asrFactor;
+  if (patch.iqamahOffset !== undefined) row.iqamah_offset = patch.iqamahOffset;
+  if (patch.prayerReminders !== undefined) row.prayer_reminders = patch.prayerReminders;
+  if (patch.jumuahAlert !== undefined) row.jumuah_alert = patch.jumuahAlert;
+
+  if (Object.keys(row).length === 0) return;
+
+  const { error } = await client()
+    .from("tenant_settings")
+    .update(row)
+    .eq("tenant_id", await myTenantId());
+  if (error) throw error;
+}
+
+/** Masjid coordinates, used by the calculated prayer timetable. */
+export async function saveTenantLocation(input: {
+  latitude: number | null;
+  longitude: number | null;
+  timezone: string;
+}): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client()
+    .from("tenants")
+    .update({
+      latitude: input.latitude,
+      longitude: input.longitude,
+      timezone: input.timezone,
+    })
+    .eq("id", await myTenantId());
+  if (error) throw error;
+}
+
+function toPrayerDay(r: Row): PrayerDay {
+  const cut = (v: unknown) => (typeof v === "string" ? v.slice(0, 5) : "");
+  return {
+    date: r.date,
+    hijri: r.hijri ?? "",
+    fajr: cut(r.fajr),
+    zuhr: cut(r.zuhr),
+    asr: cut(r.asr),
+    maghrib: cut(r.maghrib),
+    isha: cut(r.isha),
+    jumuah: r.jumuah ? cut(r.jumuah) : undefined,
+    iqamahOffset: num(r.iqamah_offset, 10),
+    source: r.source ?? "calculated",
+  };
+}
+
+export async function listPrayerDays(from: string, to: string): Promise<PrayerDay[]> {
+  if (isDemoMode) {
+    return mockPrayerDays.filter((d) => d.date >= from && d.date <= to);
+  }
+
+  const { data, error } = await client()
+    .from("prayer_days")
+    .select("*")
+    .gte("date", from)
+    .lte("date", to)
+    .order("date", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []).map(toPrayerDay);
+}
+
+function prayerRow(tenantId: string, day: PrayerDay): Row {
+  return {
+    tenant_id: tenantId,
+    date: day.date,
+    hijri: day.hijri || null,
+    fajr: day.fajr || null,
+    zuhr: day.zuhr || null,
+    asr: day.asr || null,
+    maghrib: day.maghrib || null,
+    isha: day.isha || null,
+    jumuah: day.jumuah || null,
+    iqamah_offset: day.iqamahOffset,
+    source: day.source ?? "manual",
+  };
+}
+
+/** Save one day. Used by the manual override drawer. */
+export async function savePrayerDay(day: PrayerDay): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client()
+    .from("prayer_days")
+    .upsert(prayerRow(await myTenantId(), day), {
+      onConflict: "tenant_id,date",
+    });
+  if (error) throw error;
+}
+
+/** Bulk save, used by calculated months and CSV imports. */
+export async function savePrayerDays(days: PrayerDay[]): Promise<number> {
+  if (isDemoMode || days.length === 0) return days.length;
+
+  const tenantId = await myTenantId();
+  const { error } = await client()
+    .from("prayer_days")
+    .upsert(days.map((d) => prayerRow(tenantId, d)), {
+      onConflict: "tenant_id,date",
+    });
+  if (error) throw error;
+  return days.length;
 }
 
 export async function findMemberByCode(code: string): Promise<Member | null> {
@@ -383,6 +666,37 @@ export async function listNotices(): Promise<Notice[]> {
   return (data ?? []).map(toNotice);
 }
 
+export interface StaffMember {
+  id: string;
+  name: string;
+  role: string;
+}
+
+/** Office bearers of this tenant, for assigning complaints. */
+export async function listStaff(): Promise<StaffMember[]> {
+  if (isDemoMode) {
+    return [
+      { id: "u-sadar", name: "Sadar Muhammad Yusuf", role: "sadar" },
+      { id: "u-khaj", name: "Khajanchi Abdul Karim", role: "khajanchi" },
+      { id: "u-sec", name: "Secretary Nadeem Ahmad", role: "secretary" },
+    ];
+  }
+
+  const { data, error } = await client()
+    .from("profiles")
+    .select("id, full_name, role")
+    .eq("tenant_id", await myTenantId())
+    .in("role", ["sadar", "secretary", "khajanchi", "auditor", "collector"])
+    .order("role", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []).map((p: Row) => ({
+    id: p.id,
+    name: p.full_name ?? "Office bearer",
+    role: p.role,
+  }));
+}
+
 export async function listComplaints(): Promise<Complaint[]> {
   if (isDemoMode) return mockComplaints;
 
@@ -433,6 +747,102 @@ export async function listApprovals(): Promise<Approval[]> {
   }
 
   return rows.map((r: Row) => toApproval(r, names));
+}
+
+export async function listFeePlans(): Promise<FeePlan[]> {
+  if (isDemoMode) return demoFeePlans;
+
+  const { data, error } = await client()
+    .from("fee_plans")
+    .select("*")
+    .order("amount_paise", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []).map(toFeePlan);
+}
+
+export async function listFeeOverrides(): Promise<FeeOverride[]> {
+  if (isDemoMode) return demoFeeOverrides;
+
+  const { data, error } = await client()
+    .from("fee_overrides")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []).map(toFeeOverride);
+}
+
+export interface NewFeePlan {
+  name: string;
+  amountPaise: number;
+  cycle: FeePlan["cycle"];
+  dueDay: number;
+  graceDays: number;
+}
+
+export async function createFeePlan(input: NewFeePlan): Promise<FeePlan> {
+  if (isDemoMode) {
+    return {
+      id: `demo-plan-${Date.now()}`,
+      tenantId: "t-bhr",
+      name: input.name,
+      amountPaise: input.amountPaise,
+      cycle: input.cycle,
+      dueDay: input.dueDay,
+      graceDays: input.graceDays,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  const { data, error } = await client()
+    .from("fee_plans")
+    .insert({
+      tenant_id: await myTenantId(),
+      name: input.name.trim(),
+      amount_paise: input.amountPaise,
+      cycle: input.cycle,
+      due_day: input.dueDay,
+      grace_days: input.graceDays,
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return toFeePlan(data);
+}
+
+/** Archive a plan. Existing invoices and dues are never touched. */
+export async function archiveFeePlan(id: string): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client()
+    .from("fee_plans")
+    .update({ is_active: false })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * Ask for a member's fee to be changed. The database writes the
+ * override as pending and queues a fee_change approval; only a
+ * different bearer can approve it.
+ */
+export async function requestFeeChange(
+  memberId: string,
+  amountPaise: number,
+  reason: string
+): Promise<string> {
+  if (isDemoMode) return `demo-fee-${Date.now()}`;
+
+  const { data, error } = await client().rpc("request_fee_change", {
+    p_member: memberId,
+    p_amount_paise: amountPaise,
+    p_reason: reason.trim(),
+  });
+  if (error) throw error;
+  return String(data);
 }
 
 export async function getDashboard(): Promise<DashboardSnapshot> {
@@ -694,6 +1104,73 @@ export async function requestWaiver(
   });
   if (error) throw error;
   return String(data);
+}
+
+export interface NewComplaint {
+  category: string;
+  subject: string;
+  body: string;
+  anonymous: boolean;
+  memberId?: string | null;
+  priority?: Complaint["priority"];
+}
+
+export async function createComplaint(input: NewComplaint): Promise<Complaint> {
+  if (isDemoMode) {
+    return {
+      id: `demo-cmp-${Date.now()}`,
+      tenantId: "t-bhr",
+      trackingCode: "CMP-4X2Q9K",
+      category: input.category,
+      subject: input.subject,
+      body: input.body,
+      anonymous: input.anonymous,
+      memberId: input.anonymous ? undefined : input.memberId ?? undefined,
+      status: "open",
+      priority: input.priority ?? "normal",
+      createdAt: new Date().toISOString(),
+      slaHours: 72,
+    };
+  }
+
+  const { data, error } = await client()
+    .from("complaints")
+    .insert({
+      tenant_id: await myTenantId(),
+      category: input.category,
+      subject: input.subject.trim(),
+      body: input.body.trim(),
+      anonymous: input.anonymous,
+      member_id: input.anonymous ? null : input.memberId ?? null,
+      priority: input.priority ?? "normal",
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return toComplaint(data);
+}
+
+/** Office bearer triage: status, priority and owner only. */
+export async function updateComplaint(
+  id: string,
+  patch: {
+    status?: Complaint["status"];
+    priority?: Complaint["priority"];
+    assignedTo?: string | null;
+  }
+): Promise<void> {
+  if (isDemoMode) return;
+
+  const row: Row = {};
+  if (patch.status !== undefined) row.status = patch.status;
+  if (patch.priority !== undefined) row.priority = patch.priority;
+  if (patch.assignedTo !== undefined) row.assigned_to = patch.assignedTo || null;
+
+  if (Object.keys(row).length === 0) return;
+
+  const { error } = await client().from("complaints").update(row).eq("id", id);
+  if (error) throw error;
 }
 
 export interface NewMember {

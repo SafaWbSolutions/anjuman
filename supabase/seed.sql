@@ -16,6 +16,13 @@ values
    '{"payments":true,"whatsapp":true,"idCards":true,"multiMasjid":false,"auditPack":true}'::jsonb)
 on conflict (id) do nothing;
 
+-- Bharauli, Azamgarh — used for the calculated prayer timetable.
+update public.tenants
+  set latitude = 26.0667,
+      longitude = 83.1833,
+      timezone = 'Asia/Kolkata'
+  where code = 'BHR' and latitude is null;
+
 insert into public.funds (id, tenant_id, code, name, restricted, balance_paise) values
   ('22222222-0001-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111', 'GEN', 'General Fund', false, 18450000),
   ('22222222-0002-4000-8000-000000000002', '11111111-1111-4111-8111-111111111111', 'IMS', 'Imam Salary Fund', true, 3200000),

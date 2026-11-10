@@ -39,6 +39,10 @@ export interface Tenant {
   expiresAt: string | null;
   membersCount: number;
   createdAt: string;
+  /** Used for the calculated prayer timetable. */
+  latitude?: number | null;
+  longitude?: number | null;
+  timezone?: string;
 }
 
 export type MemberType = "member" | "donor" | "imam" | "muazzin" | "staff";
@@ -132,6 +136,31 @@ export interface Fund {
   balancePaise: number;
 }
 
+export type FeeCycle = "monthly" | "quarterly" | "yearly";
+
+export interface FeePlan {
+  id: string;
+  tenantId: string;
+  name: string;
+  amountPaise: number;
+  cycle: FeeCycle;
+  dueDay: number;
+  graceDays: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface FeeOverride {
+  id: string;
+  tenantId: string;
+  memberId: string;
+  amountPaise: number;
+  reason: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  createdAt: string;
+}
+
 export interface Approval {
   id: string;
   tenantId: string;
@@ -185,6 +214,7 @@ export interface PrayerDay {
   isha: string;
   jumuah?: string;
   iqamahOffset: number;
+  source?: "calculated" | "manual" | "excel";
 }
 
 export interface Integration {

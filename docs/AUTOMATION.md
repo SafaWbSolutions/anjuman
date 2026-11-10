@@ -42,7 +42,9 @@ Supabase Dashboard → **SQL Editor** me file-wise, is order me:
 7. `supabase/migrations/0007_fee_change.sql`
 8. `supabase/migrations/0008_complaint_workflow.sql`
 9. `supabase/migrations/0009_prayer_location.sql`
-10. `supabase/seed.sql` (sirf demo ke liye)
+10. `supabase/migrations/0010_donations.sql`
+11. `supabase/migrations/0011_security_hardening.sql`
+12. `supabase/seed.sql` (sirf demo ke liye)
 
 Ya CLI se:
 

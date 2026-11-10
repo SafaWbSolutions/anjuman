@@ -36,6 +36,7 @@ const files = [
   "supabase/migrations/0008_complaint_workflow.sql",
   "supabase/migrations/0009_prayer_location.sql",
   "supabase/migrations/0010_donations.sql",
+  "supabase/migrations/0011_security_hardening.sql",
   "supabase/seed.sql",
 ];
 
@@ -583,6 +584,138 @@ try {
   anonVerify = error.message;
 }
 check("anonymous cannot verify payments", /permission denied|Not allowed/.test(anonVerify), anonVerify);
+
+// ═══════════════════════════════════════════════════════════════
+// 17. Security hardening (0011)
+// ═══════════════════════════════════════════════════════════════
+
+// A member may not become a super admin.
+let escalate = "";
+try {
+  await asUser(U_MEMBER, "authenticated",
+    `update public.profiles set role = 'super_admin' where id = auth.uid()`);
+} catch (error) {
+  escalate = error.message;
+}
+check("member cannot escalate own role", escalate.length > 0, escalate);
+const memRole = await db.query(`select role, is_active from public.profiles where id = $$${U_MEMBER}$$`);
+check("member role unchanged", memRole.rows[0].role === "member", JSON.stringify(memRole.rows[0]));
+
+// ...and may not quietly deactivate themselves either.
+let deactivate = "";
+try {
+  await asUser(U_MEMBER, "authenticated",
+    `update public.profiles set is_active = false where id = auth.uid()`);
+} catch (error) {
+  deactivate = error.message;
+}
+check("member cannot deactivate own account", deactivate.length > 0, deactivate);
+
+// Self-service on the harmless fields still works.
+const rename = await asUser(U_MEMBER, "authenticated",
+  `update public.profiles set full_name = 'Idris Updated' where id = auth.uid() returning full_name`);
+check("member can still edit own name", rename.rows[0]?.full_name === "Idris Updated",
+  JSON.stringify(rename.rows[0]));
+
+// A browser insert cannot arrive as a verified donation.
+// (FUND is the same BHR fund used by the expense test above.)
+const fakeDonation = await asUser(U_SADAR, "authenticated", `
+  insert into public.donations
+    (tenant_id, fund_id, donor_name, amount_paise, method, status, receipt_no, verified_by)
+  values ($$${BHR}$$, $$${FUND}$$, 'Fake Donor', 100000, 'cash', 'verified', 'D-FAKE-1', $$${U_KHAJ}$$)
+  returning id, status, receipt_no, verified_by, entered_by
+`);
+check("browser donation forced pending", fakeDonation.rows[0].status === "pending",
+  JSON.stringify(fakeDonation.rows[0]));
+check("browser donation has no receipt", fakeDonation.rows[0].receipt_no === null,
+  JSON.stringify(fakeDonation.rows[0]));
+check("browser donation has no verifier", fakeDonation.rows[0].verified_by === null,
+  JSON.stringify(fakeDonation.rows[0]));
+check("browser donation records maker", fakeDonation.rows[0].entered_by === U_SADAR,
+  JSON.stringify(fakeDonation.rows[0]));
+
+// The real donation flow: record → another bearer verifies → fund + ledger.
+const created = await asUser(U_SADAR, "authenticated",
+  `select public.create_donation($$${FUND}$$, 'Haji Test', 500000, 'upi') as id`);
+const DON = created.rows[0].id;
+
+let selfVerifyDon = "";
+try {
+  await asUser(U_SADAR, "authenticated", `select public.verify_donation($$${DON}$$)`);
+} catch (error) {
+  selfVerifyDon = error.message;
+}
+check("maker cannot verify own donation", /Maker/.test(selfVerifyDon), selfVerifyDon);
+
+const donFundBefore = await db.query(`select balance_paise from public.funds where id = $$${FUND}$$`);
+const donationReceipt = await asUser(U_KHAJ, "authenticated",
+  `select public.verify_donation($$${DON}$$) as r`);
+const DON_RECEIPT = String(donationReceipt.rows[0].r);
+check("khajanchi can verify a donation", /^D-\d{4}-\d{5}$/.test(DON_RECEIPT), donationReceipt.rows[0].r);
+const donFundAfter = await db.query(`select balance_paise from public.funds where id = $$${FUND}$$`);
+check("donation credits the fund",
+  Number(donFundAfter.rows[0].balance_paise) - Number(donFundBefore.rows[0].balance_paise) === 500000,
+  JSON.stringify({ before: donFundBefore.rows[0], after: donFundAfter.rows[0] }));
+const donationLedger = await db.query(
+  `select count(*)::int as n from public.ledger_entries where ref_type = 'donation' and ref_no = $$${DON_RECEIPT}$$`);
+check("donation writes a ledger entry", donationLedger.rows[0].n === 1, JSON.stringify(donationLedger.rows[0]));
+check("donation ledger chain intact",
+  (await db.query(`select public.verify_ledger($$${BHR}$$) as broken`)).rows[0].broken === null);
+
+// A recorded donation is immutable.
+let editDonation = "";
+try {
+  await asUser(U_KHAJ, "authenticated",
+    `update public.donations set amount_paise = 900000 where id = $$${DON}$$`);
+} catch (error) {
+  editDonation = error.message;
+}
+check("verified donation amount is locked", editDonation.length > 0, editDonation);
+
+// Internal sequence helpers are off-limits to anonymous callers.
+let anonReceipt = "";
+try {
+  await asNoProfile("anon", `select public.next_receipt_no($$${BHR}$$)`);
+} catch (error) {
+  anonReceipt = error.message;
+}
+check("anonymous cannot mint a receipt number", /permission denied/i.test(anonReceipt), anonReceipt);
+
+let anonLedger = "";
+try {
+  await asNoProfile("anon", `select public.verify_ledger($$${BHR}$$)`);
+} catch (error) {
+  anonLedger = error.message;
+}
+check("anonymous cannot probe the ledger", /permission denied/i.test(anonLedger), anonLedger);
+
+// Office bearers can still mint one internally.
+const minted = await asUser(U_SADAR, "authenticated",
+  `select public.next_receipt_no($$${BHR}$$) as r`);
+check("office can still mint a receipt number", /^R-\d{4}-\d{5}$/.test(String(minted.rows[0].r)),
+  minted.rows[0].r);
+
+// Notice broadcast works for the office and is refused for a member.
+const noticeRow = await asUser(U_SADAR, "authenticated", `
+  insert into public.notices (tenant_id, title, body, audience)
+  values ($$${BHR}$$, 'Hardening Notice', 'Test body', 'all')
+  returning id`);
+const NOTICE = noticeRow.rows[0].id;
+let bcastErr = "";
+try {
+  await asUser(U_SADAR, "authenticated", `select public.broadcast_notice($$${NOTICE}$$)`);
+} catch (error) {
+  bcastErr = error.message;
+}
+check("office bearer can broadcast a notice", bcastErr.length === 0, bcastErr);
+
+let memberBcast = "";
+try {
+  await asUser(U_MEMBER, "authenticated", `select public.broadcast_notice($$${NOTICE}$$)`);
+} catch (error) {
+  memberBcast = error.message;
+}
+check("member cannot broadcast a notice", memberBcast.length > 0, memberBcast);
 
 console.log("\n" + (failures.length === 0 ? "ALL BEHAVIOUR TESTS PASSED" : `FAILURES: ${failures.join(", ")}`));
 if (failures.length) process.exit(1);

@@ -44,13 +44,11 @@ import {
 } from "@/components/ui";
 import { formatDate, formatINR, cn } from "@/lib/utils";
 
-const FUND_OPTIONS = [
-  "Masjid Construction",
-  "Zakat",
-  "Sadaqah",
-  "Imam Fund",
-  "Ramadan Iftar",
-] as const;
+/** A fund is treated as Zakat when its name says so — used for the
+ *  restricted-fund stat and the filter chip. */
+function isZakatFund(name: string | undefined) {
+  return !!name && /zakat/i.test(name);
+}
 
 export default function DonationsPage() {
   const { user } = useAuth();
@@ -101,6 +99,8 @@ export default function DonationsPage() {
   const fundMap = useMemo(() => new Map(funds.map((f) => [f.id, f])), [funds]);
   const memberMap = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 
+  const fundOptions = useMemo(() => funds.map((f) => f.name), [funds]);
+
   const rows = useMemo(
     () =>
       donations.filter((d) => {
@@ -123,7 +123,7 @@ export default function DonationsPage() {
     .filter((d) => d.createdAt.startsWith(new Date().toISOString().slice(0, 7)))
     .reduce((s, d) => s + d.amountPaise, 0);
   const zakat = donations
-    .filter((d) => fundMap.get(d.fundId)?.name === "Zakat")
+    .filter((d) => isZakatFund(fundMap.get(d.fundId)?.name))
     .reduce((s, d) => s + d.amountPaise, 0);
 
   const pendingCount = donations.filter((d) => d.status === "pending").length;
@@ -204,7 +204,7 @@ export default function DonationsPage() {
           className="w-auto py-2 text-[12.5px]"
         >
           <option value="all">All funds</option>
-          {FUND_OPTIONS.map((f) => (
+          {fundOptions.map((f) => (
             <option key={f} value={f}>
               {f}
             </option>
@@ -251,7 +251,7 @@ export default function DonationsPage() {
                     </div>
                   </Td>
                   <Td>
-                    <Badge tone={fund?.name === "Zakat" ? "violet" : "brand"}>
+                    <Badge tone={isZakatFund(fund?.name) ? "violet" : "brand"}>
                       {fund?.name ?? "—"}
                     </Badge>
                   </Td>

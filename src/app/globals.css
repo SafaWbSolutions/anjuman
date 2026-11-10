@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Noto Sans", "Noto Naskh Arabic", sans-serif;
+
+  --color-brand-50: #ecfdf5;
+  --color-brand-100: #d1fae5;
+  --color-brand-200: #a7f3d0;
+  --color-brand-300: #6ee7b7;
+  --color-brand-400: #34d399;
+  --color-brand-500: #10b981;
+  --color-brand-600: #059669;
+  --color-brand-700: #047857;
+  --color-brand-800: #065f46;
+  --color-brand-900: #064e3b;
+
+  --color-ink-50: #f8fafc;
+  --color-ink-100: #f1f5f9;
+  --color-ink-200: #e2e8f0;
+  --color-ink-300: #cbd5e1;
+  --color-ink-400: #94a3b8;
+  --color-ink-500: #64748b;
+  --color-ink-600: #475569;
+  --color-ink-700: #334155;
+  --color-ink-800: #1e293b;
+  --color-ink-900: #0f172a;
+
+  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04),
+    0 1px 3px 0 rgb(15 23 42 / 0.06);
+  --shadow-pop: 0 12px 32px -8px rgb(15 23 42 / 0.18),
+    0 4px 12px -4px rgb(15 23 42 / 0.1);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-ink-50 text-ink-800 antialiased;
+    font-family: var(--font-sans);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-ink-300) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-ink-300);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  [dir="rtl"] .rtl-flip {
+    transform: scaleX(-1);
+  }
+}
+
+@layer components {
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 focus-visible:ring-offset-2;
+  }
+  .card {
+    @apply rounded-2xl border border-ink-200 bg-white shadow-[var(--shadow-card)];
+  }
+  .card-pad {
+    @apply p-5 sm:p-6;
+  }
+  .label {
+    @apply mb-1.5 block text-[13px] font-medium text-ink-600;
+  }
+  .input {
+    @apply w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-sm text-ink-900 placeholder:text-ink-400 transition focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 outline-none;
+  }
+  .select {
+    @apply w-full appearance-none rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 pr-9 text-sm text-ink-900 placeholder:text-ink-400 transition focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 outline-none;
+  }
+  .table-head {
+    @apply bg-ink-50/80 text-[11px] font-semibold uppercase tracking-wider text-ink-500;
+  }
+  .table-cell {
+    @apply px-4 py-3 text-sm text-ink-700 align-middle;
+  }
+}
+
+/* Thermal receipt (58mm / 80mm) */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-area {
+    display: block !important;
+  }
+  body {
+    background: #fff !important;
+  }
+}
+
+.receipt-58 {
+  width: 58mm;
+  font-family: "Courier New", monospace;
+  font-size: 10px;
+  line-height: 1.35;
+}
+.receipt-80 {
+  width: 80mm;
+  font-family: "Courier New", monospace;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* ID card sheet — 2 x 4 on A4 */
+.id-sheet {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8mm;
+}
+.id-card {
+  width: 85mm;
+  height: 54mm;
+  border-radius: 3mm;
+  overflow: hidden;
+  position: relative;
+  background: #fff;
+  border: 0.4mm solid #d7dee8;
+}
+.id-card-face {
+  width: 85.6mm;
+  height: 54mm;
+}
+
+@media print {
+  .id-sheet {
+    gap: 6mm;
+  }
+  .id-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

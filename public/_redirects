@@ -1,0 +1,4 @@
+# Cloudflare Pages redirects
+# Next.js static export writes folder/index.html for every route,
+# so deep links already resolve. This keeps trailing slashes clean.
+/index.html  /  301

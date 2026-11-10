@@ -1,0 +1,44 @@
+name: Nightly backup
+
+# Dumps the Postgres database and uploads it to Cloudflare R2.
+# Free-tier friendly: a compressed dump of a village-sized anjuman is
+# a few hundred kilobytes.
+
+on:
+  schedule:
+    - cron: "0 21 * * *" # 02:30 IST
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install postgres client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Dump database
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          STAMP=$(date -u +%Y/%m/%d)
+          FILE="anjuman-$(date -u +%Y%m%d-%H%M).sql.gz"
+          pg_dump "$DB_URL" --no-owner --no-privileges | gzip -9 > "$FILE"
+          echo "FILE=$FILE" >> "$GITHUB_ENV"
+          echo "PREFIX=backups/$STAMP" >> "$GITHUB_ENV"
+          ls -lh "$FILE"
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          aws s3 cp "$FILE" "s3://$R2_BUCKET/$PREFIX/$FILE" --endpoint-url "$R2_ENDPOINT"
+
+      - name: Keep the run in the summary
+        if: always()
+        run: echo "Backup ${{ env.FILE }} → r2://${{ secrets.R2_BUCKET }}/${{ env.PREFIX }}/" >> "$GITHUB_STEP_SUMMARY"

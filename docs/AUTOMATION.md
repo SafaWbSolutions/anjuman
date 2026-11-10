@@ -37,7 +37,8 @@ Supabase Dashboard → **SQL Editor** me file-wise, is order me:
 2. `supabase/migrations/0002_rls.sql`
 3. `supabase/migrations/0003_functions.sql`
 4. `supabase/migrations/0004_automation.sql`
-5. `supabase/seed.sql` (sirf demo ke liye)
+5. `supabase/migrations/0005_workflows.sql`
+6. `supabase/seed.sql` (sirf demo ke liye)
 
 Ya CLI se:
 

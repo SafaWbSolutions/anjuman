@@ -30,6 +30,7 @@ const files = [
   "supabase/migrations/0002_rls.sql",
   "supabase/migrations/0003_functions.sql",
   "supabase/migrations/0004_automation.sql",
+  "supabase/migrations/0005_workflows.sql",
   "supabase/seed.sql",
 ];
 
@@ -113,6 +114,7 @@ const U_SADAR = "aaaaaaaa-0000-4000-8000-000000000001";
 const U_KHAJ = "aaaaaaaa-0000-4000-8000-000000000002";
 const U_MEMBER = "aaaaaaaa-0000-4000-8000-000000000003";
 const U_OTHER = "aaaaaaaa-0000-4000-8000-000000000004";
+const U_SEC = "aaaaaaaa-0000-4000-8000-000000000005";
 
 const failures = [];
 function check(label, condition, extra = "") {
@@ -128,7 +130,8 @@ await db.exec(`
     ($$${U_SADAR}$$, 'sadar@test.in'),
     ($$${U_KHAJ}$$, 'khajanchi@test.in'),
     ($$${U_MEMBER}$$, 'member@test.in'),
-    ($$${U_OTHER}$$, 'other@test.in')
+    ($$${U_OTHER}$$, 'other@test.in'),
+    ($$${U_SEC}$$, 'secretary@test.in')
   on conflict do nothing;
 
   insert into public.tenants (id, code, name, village, district, state, status)
@@ -143,7 +146,8 @@ await db.exec(`
     ($$${U_SADAR}$$, $$${BHR}$$, 'Sadar Sahab', '+91 9800000011', 'sadar', true),
     ($$${U_KHAJ}$$, $$${BHR}$$, 'Khajanchi Sahab', '+91 9800000012', 'khajanchi', true),
     ($$${U_MEMBER}$$, $$${BHR}$$, 'Muhammad Idris', '+91 9800000001', 'member', true),
-    ($$${U_OTHER}$$, $$${TST}$$, 'Other Sadar', '+91 9700000011', 'sadar', true)
+    ($$${U_OTHER}$$, $$${TST}$$, 'Other Sadar', '+91 9700000011', 'sadar', true),
+    ($$${U_SEC}$$, $$${BHR}$$, 'Secretary Sahab', '+91 9800000013', 'secretary', true)
   on conflict (id) do nothing;
 
   update public.profiles
@@ -363,6 +367,46 @@ check("sadar can approve override", approved.rows[0].approved_by === U_SADAR);
 // 15. Queue worker primitives.
 const claimed = await asService(`select * from public.claim_notifications(10)`);
 check("service can claim queued messages", claimed.rows.length >= 1, `rows=${claimed.rows.length}`);
+
+// 15b. Waiver request + approval workflow.
+const waive = await asUser(U_SADAR, "authenticated", `
+  select public.request_waiver($$${MEMBER}$$, array['2026-11']::text[], 'widow concession') as id
+`);
+const WAIVER = waive.rows[0].id;
+const waiverRow = await db.query(`
+  select status, meta, requested_by from public.approvals where id = $$${WAIVER}$$
+`);
+check("waiver stores its months", waiverRow.rows[0].meta.periods.includes("2026-11"), JSON.stringify(waiverRow.rows[0].meta));
+
+let selfDecide = "";
+try {
+  await asUser(U_SADAR, "authenticated", `select public.decide_approval($$${WAIVER}$$, true, 'self')`);
+} catch (error) {
+  selfDecide = error.message;
+}
+check("maker cannot decide own waiver", selfDecide.includes("Maker cannot decide"), selfDecide);
+
+const decided = await asUser(U_SEC, "authenticated", `select public.decide_approval($$${WAIVER}$$, true, 'approved by secretary') as r`);
+check("another bearer can approve waiver", decided.rows[0].r.status === "approved", JSON.stringify(decided.rows[0].r));
+
+const waived = await db.query(`
+  select paid_paise, status, waived_by from public.invoices
+  where member_id = $$${MEMBER}$$ and period = '2026-11'
+`);
+check("waiver marks the month waived", waived.rows[0]?.status === "waived", JSON.stringify(waived.rows[0]));
+
+let directDecision = "";
+try {
+  await asUser(U_SADAR, "authenticated", `
+    update public.approvals set status = 'approved', decided_by = $$${U_SADAR}$$ where id = $$${WAIVER}$$
+  `);
+} catch (error) {
+  directDecision = error.message;
+}
+check("approvals cannot be edited directly", /workflow|locked/.test(directDecision), directDecision);
+
+const queue = await asUser(U_SADAR, "authenticated", `select public.my_work_queue(10) as q`);
+check("work queue counts pending work", Number(queue.rows[0].q.pending_payments) >= 0 && Array.isArray(queue.rows[0].q.items), JSON.stringify(queue.rows[0].q).slice(0, 160));
 
 // 16. Null role / null tenant must never bypass a permission check.
 const pending = await asService(`

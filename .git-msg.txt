@@ -1,6 +1,5 @@
-fix(demo): return the demo tenant from getCurrentTenant
+docs(deploy): document direct-upload deploy and skip CI publish without secrets
 
-ID cards (and any page needing tenant branding) rendered a permanent
-"Loading…" state in demo mode because getCurrentTenant returned null.
-Also render the card sheet without waiting for the tenant, add a
-one-command deploy script for Cloudflare Pages direct upload.
+Cloudflare's Git builder kept producing an old bundle for this project, so
+production deployments are now direct uploads (`npm run deploy`). The
+GitHub Action skips its publish step until the Cloudflare secrets exist.

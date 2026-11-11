@@ -69,9 +69,18 @@ guide in **[docs/AUTOMATION.md](docs/AUTOMATION.md)**.
 
 ```bash
 npm run build      # static export → out/
+npm run deploy     # upload out/ to Cloudflare Pages (project: anjuman)
 npm run typecheck  # tsc --noEmit
 npm run test:sql   # migrations + money-flow tests in PGlite (real Postgres)
 ```
+
+> **Deploying:** the Cloudflare Pages project `anjuman` is set to **direct upload**.
+> Git pushes no longer publish automatically (its Git builder kept serving an old
+> cached build), so run `npm run build && npm run deploy` after a change. The
+> GitHub Action in `.github/workflows/deploy.yml` does the same on push, but only
+> once `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and the
+> `CLOUDFLARE_PAGES_PROJECT` repo variable are set in GitHub → Settings → Secrets.
+
 
 `npm run test:sql` runs the actual migration files in an in-memory Postgres and then
 asserts the security promises: tenant isolation, maker–checker, immutable amounts,

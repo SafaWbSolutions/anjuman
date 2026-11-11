@@ -317,10 +317,10 @@ export const prayerDays: PrayerDay[] = PRAYERS.map((p, i) => ({
 }));
 
 export const platformPlans: PlatformPlan[] = [
-  { id: "p-free", name: "Free", type: "free", pricePaise: 0, cycle: "lifetime", maxMembers: 150, features: ["Members & households", "Basic collections", "Reports"], activeTenants: 7 },
-  { id: "p-standard", name: "Standard", type: "fixed", pricePaise: 120000, cycle: "yearly", maxMembers: 1000, features: ["Everything in Free", "Payment gateway", "WhatsApp reminders", "ID cards"], activeTenants: 18 },
-  { id: "p-pro", name: "Pro", type: "fixed", pricePaise: 250000, cycle: "yearly", maxMembers: null, features: ["Everything in Standard", "Multi-masjid", "Audit pack", "Priority support"], activeTenants: 4 },
-  { id: "p-custom", name: "Custom", type: "custom", pricePaise: 0, cycle: "yearly", maxMembers: null, features: ["Negotiated pricing", "Custom limits", "Dedicated onboarding"], activeTenants: 2 },
+  { id: "p-free", name: "Free", type: "free", pricePaise: 0, cycle: "lifetime", maxMembers: 150, features: ["Members & households", "Basic collections", "Reports"], active: true, sortOrder: 1, activeTenants: 7 },
+  { id: "p-standard", name: "Standard", type: "fixed", pricePaise: 120000, cycle: "yearly", maxMembers: 1000, features: ["Everything in Free", "Payment gateway", "WhatsApp reminders", "ID cards"], active: true, sortOrder: 2, activeTenants: 18 },
+  { id: "p-pro", name: "Pro", type: "fixed", pricePaise: 250000, cycle: "yearly", maxMembers: null, features: ["Everything in Standard", "Multi-masjid", "Audit pack", "Priority support"], active: true, sortOrder: 3, activeTenants: 4 },
+  { id: "p-custom", name: "Custom", type: "custom", pricePaise: 0, cycle: "yearly", maxMembers: null, features: ["Negotiated pricing", "Custom limits", "Dedicated onboarding"], active: true, sortOrder: 4, activeTenants: 2 },
 ];
 
 /* ── Derived selectors ───────────────────────────────────────── */

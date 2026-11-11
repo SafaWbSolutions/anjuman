@@ -1047,6 +1047,130 @@ export async function listApprovals(): Promise<Approval[]> {
   return rows.map((r: Row) => toApproval(r, names));
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Platform plans (super admin)
+// ═══════════════════════════════════════════════════════════════
+
+export interface PlatformPlan {
+  id: string;
+  name: string;
+  type: "free" | "fixed" | "custom";
+  pricePaise: number;
+  cycle: "monthly" | "quarterly" | "yearly" | "lifetime";
+  maxMembers: number | null;
+  features: string[];
+  active: boolean;
+  sortOrder: number;
+  activeTenants: number;
+}
+
+function toPlatformPlan(r: Row): PlatformPlan {
+  return {
+    id: r.id,
+    name: r.name,
+    type: r.type,
+    pricePaise: Number(r.price_paise),
+    cycle: r.cycle,
+    maxMembers: r.max_members === null ? null : Number(r.max_members),
+    features: r.features ?? [],
+    active: r.active,
+    sortOrder: Number(r.sort_order),
+    activeTenants: 0,
+  };
+}
+
+/** List all platform plans (super admin). */
+export async function listPlatformPlans(): Promise<PlatformPlan[]> {
+  if (isDemoMode) {
+    // Return mock data matching the seeded values
+    const base = [
+      { id: "p-free", name: "Free", type: "free" as const, pricePaise: 0, cycle: "yearly" as const, maxMembers: 150, features: ["Members & households", "Basic collections", "Reports"], active: true, sortOrder: 1 },
+      { id: "p-standard", name: "Standard", type: "fixed" as const, pricePaise: 120000, cycle: "yearly" as const, maxMembers: 1000, features: ["Everything in Free", "Payment gateway", "WhatsApp reminders", "ID cards"], active: true, sortOrder: 2 },
+      { id: "p-pro", name: "Pro", type: "fixed" as const, pricePaise: 250000, cycle: "yearly" as const, maxMembers: null, features: ["Everything in Standard", "Multi-masjid", "Audit pack", "Priority support"], active: true, sortOrder: 3 },
+      { id: "p-custom", name: "Custom", type: "custom" as const, pricePaise: 0, cycle: "yearly" as const, maxMembers: null, features: ["Negotiated pricing", "Custom limits", "Custom features"], active: true, sortOrder: 4 },
+    ];
+    return base.map((p) => ({ ...p, activeTenants: 0 }));
+  }
+
+  const { data, error } = await client()
+    .from("platform_plans")
+    .select("*")
+    .order("sort_order");
+
+  if (error) throw error;
+  const plans = (data ?? []).map(toPlatformPlan);
+
+  // Compute active tenant count per plan
+  const { data: tenants } = await client()
+    .from("tenants")
+    .select("plan_type")
+    .in("status", ["active", "trial"]);
+
+  const counts = new Map<string, number>();
+  for (const t of tenants ?? []) {
+    const key = `p-${t.plan_type}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return plans.map((p) => ({ ...p, activeTenants: counts.get(p.id) ?? 0 }));
+}
+
+export interface PlatformPlanPatch {
+  name?: string;
+  type?: "free" | "fixed" | "custom";
+  pricePaise?: number;
+  cycle?: "monthly" | "quarterly" | "yearly" | "lifetime";
+  maxMembers?: number | null;
+  features?: string[];
+  active?: boolean;
+  sortOrder?: number;
+}
+
+/** Update a platform plan (super admin). */
+export async function savePlatformPlan(id: string, patch: PlatformPlanPatch): Promise<void> {
+  if (isDemoMode) return;
+
+  const row: Row = {};
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.type !== undefined) row.type = patch.type;
+  if (patch.pricePaise !== undefined) row.price_paise = patch.pricePaise;
+  if (patch.cycle !== undefined) row.cycle = patch.cycle;
+  if (patch.maxMembers !== undefined) row.max_members = patch.maxMembers;
+  if (patch.features !== undefined) row.features = patch.features;
+  if (patch.active !== undefined) row.active = patch.active;
+  if (patch.sortOrder !== undefined) row.sort_order = patch.sortOrder;
+
+  if (Object.keys(row).length === 0) return;
+
+  const { error } = await client()
+    .from("platform_plans")
+    .update(row)
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/** Create a new platform plan (super admin). */
+export async function createPlatformPlan(input: PlatformPlanPatch & { id: string }): Promise<void> {
+  if (isDemoMode) return;
+
+  const row: Row = {
+    id: input.id,
+    name: input.name ?? "",
+    type: input.type ?? "fixed",
+    price_paise: input.pricePaise ?? 0,
+    cycle: input.cycle ?? "yearly",
+    max_members: input.maxMembers ?? null,
+    features: input.features ?? [],
+    active: input.active ?? true,
+    sort_order: input.sortOrder ?? 0,
+  };
+
+  const { error } = await client()
+    .from("platform_plans")
+    .insert(row);
+  if (error) throw error;
+}
+
 export async function listFeePlans(): Promise<FeePlan[]> {
   if (isDemoMode) return demoFeePlans;
 

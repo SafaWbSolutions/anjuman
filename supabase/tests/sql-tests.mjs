@@ -37,6 +37,7 @@ const files = [
   "supabase/migrations/0009_prayer_location.sql",
   "supabase/migrations/0010_donations.sql",
   "supabase/migrations/0011_security_hardening.sql",
+  "supabase/migrations/0012_platform_plans.sql",
   "supabase/seed.sql",
 ];
 

@@ -262,9 +262,11 @@ export interface PlatformPlan {
   name: string;
   type: PlanType;
   pricePaise: number;
-  cycle: "monthly" | "yearly" | "lifetime";
+  cycle: "monthly" | "quarterly" | "yearly" | "lifetime";
   maxMembers: number | null;
   features: string[];
+  active: boolean;
+  sortOrder: number;
   activeTenants: number;
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Check,
   Layers,
@@ -9,7 +9,8 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { platformPlans } from "@/lib/mock";
+import type { PlatformPlan } from "@/lib/types";
+import { listPlatformPlans, savePlatformPlan, createPlatformPlan } from "@/lib/repo";
 import {
   Badge,
   Button,
@@ -27,6 +28,78 @@ import { cn, formatINR } from "@/lib/utils";
 
 export default function PlansPage() {
   const [editOpen, setEditOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<PlatformPlan | null>(null);
+  const [plans, setPlans] = useState<PlatformPlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    listPlatformPlans()
+      .then((p) => {
+        if (mounted) {
+          setPlans(p);
+          setLoading(false);
+        }
+      })
+      .catch((e) => {
+        if (mounted) {
+          setError(e instanceof Error ? e.message : "Plans load nahi hue");
+          setLoading(false);
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function handleSavePlan() {
+    if (!editingPlan) return;
+    try {
+      await savePlatformPlan(editingPlan.id, editingPlan);
+      toast("Plan saved");
+      setEditOpen(false);
+      // Refresh
+      const fresh = await listPlatformPlans();
+      setPlans(fresh);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Save failed", "error");
+    }
+  }
+
+  async function handleCreatePlan(newPlan: PlatformPlan) {
+    try {
+      await createPlatformPlan(newPlan);
+      toast("Plan created");
+      setEditOpen(false);
+      const fresh = await listPlatformPlans();
+      setPlans(fresh);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Create failed", "error");
+    }
+  }
+
+  if (loading) {
+    return (
+      <>
+        <PageHeader eyebrow="Platform" title="Plans & pricing" description="Loading…" />
+        <Card className="flex items-center justify-center gap-2 p-10 text-[13px] text-ink-500">
+          Plans taiyaar ho rahe hain…
+        </Card>
+      </>
+    );
+  }
+
+  if (error) {
+    return (
+      <>
+        <PageHeader eyebrow="Platform" title="Plans & pricing" />
+        <Card className="p-8 text-center border-red-200 bg-red-50">
+          <p className="text-red-700">{error}</p>
+        </Card>
+      </>
+    );
+  }
 
   return (
     <>
@@ -35,14 +108,35 @@ export default function PlansPage() {
         title="Plans & pricing"
         description="Default plans for new anjumans. Any tenant's price can still be overridden individually from their profile."
         actions={
-          <Button onClick={() => setEditOpen(true)}>
+          <Button onClick={() => {
+            setEditingPlan({
+              id: "p-new",
+              name: "",
+              type: "fixed",
+              pricePaise: 0,
+              cycle: "yearly",
+              maxMembers: null,
+              features: [],
+              active: true,
+              sortOrder: plans.length + 1,
+              activeTenants: 0,
+            });
+            setEditOpen(true);
+          }}>
             <Plus className="h-4 w-4" /> New plan
           </Button>
         }
       />
 
+      {error && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-[12.5px] text-red-700">
+          <span className="mt-0.5">⚠</span>
+          <span className="flex-1">{error}</span>
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-4">
-        {platformPlans.map((p) => {
+        {plans.map((p) => {
           const highlight = p.id === "p-standard";
           return (
             <Card
@@ -86,10 +180,13 @@ export default function PlansPage() {
 
               <div className="mt-4 flex items-center justify-between border-t border-ink-100 pt-3">
                 <span className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-500">
-                  <Users className="h-3.5 w-3.5" /> {p.activeTenants} anjumans
+                  <Users className="h-3.5 w-3.5" /> {p.active ? "Active" : "Inactive"}
                 </span>
                 <button
-                  onClick={() => setEditOpen(true)}
+                  onClick={() => {
+                    setEditingPlan(p);
+                    setEditOpen(true);
+                  }}
                   className="inline-flex items-center gap-1 text-[11.5px] font-medium text-brand-700"
                 >
                   <Pencil className="h-3 w-3" /> Edit
@@ -111,7 +208,7 @@ export default function PlansPage() {
               <thead>
                 <tr className="table-head">
                   <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Feature</th>
-                  {platformPlans.map((p) => (
+                  {plans.map((p) => (
                     <th key={p.id} className="px-4 py-2.5 text-center text-[10.5px] font-semibold uppercase tracking-wide text-ink-500">
                       {p.name}
                     </th>
@@ -119,7 +216,7 @@ export default function PlansPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
-                {[
+                {([
                   ["Members & households", [1, 1, 1, 1]],
                   ["Collections & receipts", [1, 1, 1, 1]],
                   ["Online payments (own gateway)", [0, 1, 1, 1]],
@@ -129,10 +226,10 @@ export default function PlansPage() {
                   ["Audit pack export", [0, 0, 1, 1]],
                   ["Priority support", [0, 0, 1, 1]],
                   ["Dedicated onboarding", [0, 0, 0, 1]],
-                ].map(([label, flags]) => (
-                  <tr key={label as string} className="hover:bg-ink-50/50">
-                    <td className="px-5 py-2.5 text-[12.5px] text-ink-700">{label as string}</td>
-                    {(flags as number[]).map((f, i) => (
+                ] as const).map(([label, flags]) => (
+                  <tr key={label} className="hover:bg-ink-50/50">
+                    <td className="px-5 py-2.5 text-[12.5px] text-ink-700">{label}</td>
+                    {flags.map((f, i) => (
                       <td key={i} className="px-4 py-2.5 text-center">
                         {f ? (
                           <Check className="mx-auto h-3.5 w-3.5 text-brand-600" />
@@ -151,11 +248,11 @@ export default function PlansPage() {
         <Card>
           <CardHeader title="Revenue mix" subtitle="By plan" />
           <div className="space-y-3 p-5">
-            {platformPlans
+            {plans
               .filter((p) => p.pricePaise > 0)
               .map((p) => {
-                const rev = p.pricePaise * p.activeTenants;
-                const max = Math.max(...platformPlans.map((x) => x.pricePaise * x.activeTenants));
+                const rev = p.pricePaise * (p.active ? 1 : 0);
+                const max = Math.max(...plans.map((x) => x.pricePaise * (x.active ? 1 : 0)), 1);
                 return (
                   <div key={p.id}>
                     <div className="mb-1 flex justify-between text-[12px]">
@@ -171,7 +268,7 @@ export default function PlansPage() {
             <div className="flex items-center justify-between border-t border-ink-100 pt-3 text-[12.5px]">
               <span className="font-medium text-ink-700">Total ARR</span>
               <span className="font-semibold text-ink-900">
-                {formatINR(platformPlans.reduce((s, p) => s + p.pricePaise * p.activeTenants, 0))}
+                {formatINR(plans.reduce((s, p) => s + p.pricePaise * (p.active ? 1 : 0), 0))}
               </span>
             </div>
           </div>
@@ -200,39 +297,70 @@ export default function PlansPage() {
 
       <Drawer
         open={editOpen}
-        onClose={() => setEditOpen(false)}
-        title="Edit plan"
+        onClose={() => {
+          setEditOpen(false);
+          setEditingPlan(null);
+        }}
+        title={editingPlan?.id === "p-new" ? "New plan" : "Edit plan"}
         subtitle="Changes apply only to new subscriptions unless you choose to migrate"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setEditOpen(false)}>Cancel</Button>
-            <Button onClick={() => { toast("Plan saved"); setEditOpen(false); }}>Save plan</Button>
+            <Button variant="secondary" onClick={() => { setEditOpen(false); setEditingPlan(null); }}>
+              Cancel
+            </Button>
+            <Button onClick={handleSavePlan}>Save plan</Button>
           </div>
         }
       >
         <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Plan ID" hint="Unique identifier, used in tenant assignment.">
+            <Input
+              value={editingPlan?.id ?? ""}
+              onChange={(e) => setEditingPlan((prev) => prev ? { ...prev, id: e.target.value } : null)}
+              placeholder="p-premium"
+              disabled={editingPlan?.id !== "p-new"}
+            />
+          </Field>
           <Field label="Plan name" className="sm:col-span-2">
-            <Input defaultValue="Standard" />
+            <Input
+              value={editingPlan?.name ?? ""}
+              onChange={(e) => setEditingPlan((prev) => prev ? { ...prev, name: e.target.value } : null)}
+              placeholder="e.g. Premium"
+            />
           </Field>
           <Field label="Pricing model">
-            <Select defaultValue="fixed">
+            <Select
+              value={editingPlan?.type ?? "fixed"}
+              onChange={(e) => setEditingPlan((prev) => prev ? { ...prev, type: e.target.value as PlatformPlan["type"] } : null)}
+            >
               <option value="free">Free</option>
               <option value="fixed">Fixed price</option>
               <option value="custom">Custom per tenant</option>
             </Select>
           </Field>
           <Field label="Price (₹)">
-            <Input defaultValue="1200" inputMode="numeric" />
+            <Input
+              value={editingPlan ? String(editingPlan.pricePaise / 100) : ""}
+              onChange={(e) => setEditingPlan((prev) => prev ? { ...prev, pricePaise: Math.round(Number(e.target.value) * 100) } : null)}
+              inputMode="numeric"
+            />
           </Field>
           <Field label="Billing cycle">
-            <Select defaultValue="yearly">
+            <Select
+              value={editingPlan?.cycle ?? "yearly"}
+              onChange={(e) => setEditingPlan((prev) => prev ? { ...prev, cycle: e.target.value as PlatformPlan["cycle"] } : null)}
+            >
               <option value="monthly">Monthly</option>
               <option value="yearly">Yearly</option>
               <option value="lifetime">Lifetime</option>
             </Select>
           </Field>
           <Field label="Member limit" hint="Leave blank for unlimited.">
-            <Input defaultValue="1000" inputMode="numeric" />
+            <Input
+              value={editingPlan?.maxMembers ? String(editingPlan.maxMembers) : ""}
+              onChange={(e) => setEditingPlan((prev) => prev ? { ...prev, maxMembers: e.target.value ? Number(e.target.value) : null } : null)}
+              inputMode="numeric"
+            />
           </Field>
         </div>
         <div className="mt-5">
@@ -240,10 +368,28 @@ export default function PlansPage() {
             <Sparkles className="h-3.5 w-3.5 text-brand-600" /> Included features
           </p>
           <div className="divide-y divide-ink-100 rounded-xl border border-ink-100">
-            {["Online payments", "WhatsApp reminders", "ID cards + QR", "Multiple masjids", "Audit pack", "Priority support"].map((f, i) => (
+            {[
+              "Members & households",
+              "Collections & receipts",
+              "Online payments (own gateway)",
+              "WhatsApp reminders",
+              "ID cards + QR",
+              "Multiple masjids",
+              "Audit pack export",
+              "Priority support",
+            ].map((f) => (
               <div key={f} className="flex items-center justify-between px-3.5 py-2.5">
                 <span className="text-[12.5px] text-ink-700">{f}</span>
-                <Switch checked={i < 4} onChange={() => toast("Feature toggled")} />
+                <Switch
+                  checked={editingPlan?.features.includes(f) ?? false}
+                  onChange={(v) => setEditingPlan((prev) => {
+                    if (!prev) return null;
+                    const features = v
+                      ? [...new Set([...prev.features, f])]
+                      : prev.features.filter((x) => x !== f);
+                    return { ...prev, features };
+                  })}
+                />
               </div>
             ))}
           </div>

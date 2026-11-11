@@ -54,18 +54,37 @@ Without environment variables the app starts in **demo mode**: pick a role on th
 screen (Sadar, Khajanchi, Collector, Member, Platform Admin) and the whole panel runs on
 deterministic sample data. Nothing is sent to a server.
 
-To connect a real Supabase project, copy `.env.example` to `.env.local` and fill in:
+### Connect a real Supabase project
 
-```
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-NEXT_PUBLIC_APP_URL=https://your-project.pages.dev
-NEXT_PUBLIC_DEMO_MODE=false
-```
+1. Create a project at **supabase.com** (Free plan is enough to start). Save the database password.
+2. **Project Settings → API** → copy **Project URL** and **anon public** key into `.env.local`:
 
-Then run the SQL in `supabase/migrations/` in order, followed by `supabase/seed.sql`.
-The automation layer (Edge Functions, cron, webhooks) has its own step-by-step
-guide in **[docs/AUTOMATION.md](docs/AUTOMATION.md)**.
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+   NEXT_PUBLIC_APP_URL=https://anjuman.pages.dev
+   NEXT_PUBLIC_DEMO_MODE=false
+   ```
+
+   (Only `NEXT_PUBLIC_*` reaches the browser. **Never** put the `service_role` key here.)
+3. **SQL Editor → New query** → paste the whole of `supabase/apply-all.sql` → **Run**.
+   That file is all 12 migrations in order; it is safe on a brand-new project.
+4. **Authentication → Users → Add user** — enter the Sadar's email + password and tick
+   **Auto Confirm User**.
+5. Edit the values at the top of `supabase/bootstrap-first-anjuman.sql` (anjuman name,
+   village, district, and that email) and run it. It creates the anjuman, its default
+   funds, a ₹500 monthly plan, and makes that user **Sadar**.
+6. `npm run build` then `npm run deploy`. With direct upload the env values are baked in
+   at build time, so Cloudflare dashboard variables are not used.
+7. Sign in with the email/password from step 4. Office bearers and members are added the
+   same way: create the auth user, then insert a `profiles` row with their `role`,
+   `tenant_id` and (for members) `member_id`.
+
+`supabase/seed.sql` is optional sample data for trying the panel — do not run it on a
+production project that will hold real money.
+
+The automation layer (Edge Functions, cron, webhooks) has its own step-by-step guide in
+**[docs/AUTOMATION.md](docs/AUTOMATION.md)**.
 
 ```bash
 npm run build      # static export → out/

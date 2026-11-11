@@ -15,6 +15,16 @@ backup is a second safety net, not the first one.
 The job **fails loudly** if the dump is smaller than 2 KB or the gzip is
 corrupt, so a "green" run always means a real backup exists.
 
+> GitHub runners are IPv4-only. Supabase Free's direct database host is
+> IPv6-only, so the workflow automatically rewrites `SUPABASE_DB_URL` to the
+> IPv4 **session pooler** (`aws-0-ap-south-1.pooler.supabase.com`,
+> user `postgres.<ref>`) and installs the PostgreSQL 17 client to match the
+> server. You do not need to change the secret.
+>
+> GitHub artifacts require a GitHub login to download (anonymous access is
+> refused), but for member phone/financial data still set
+> `BACKUP_PASSPHRASE` so the dump is AES-256 encrypted at rest.
+
 ## One-time setup
 
 Repo → **Settings → Secrets and variables → Actions → New repository secret**:

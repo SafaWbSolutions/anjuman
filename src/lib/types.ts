@@ -272,6 +272,21 @@ export interface PlatformPlan {
   activeTenants: number;
 }
 
+export interface PlatformInvoice {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  invoiceNo: string;
+  amountPaise: number;
+  status: "pending" | "paid" | "overdue" | "voided";
+  periodFrom: string;
+  periodTo: string;
+  dueDate: string;
+  paidAt?: string | null;
+  paidAmountPaise?: number | null;
+  createdAt: string;
+}
+
 export interface SessionUser {
   id: string;
   name: string;
@@ -282,4 +297,21 @@ export interface SessionUser {
   tenantName: string;
   /** Members row linked to this profile, for the member portal. */
   memberId?: string | null;
+}
+
+export interface Invitation {
+  id: string;
+  tenantId: string;
+  email: string;
+  role: Role;
+  invitedBy: string;
+  token: string;
+  expiresAt: string;
+  acceptedAt?: string | null;
+  createdAt: string;
+}
+
+export interface NewInvitation {
+  email: string;
+  role: Role;
 }

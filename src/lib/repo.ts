@@ -37,14 +37,17 @@ import type {
   FeePlan,
   Fund,
   Invoice,
+  Invitation,
   LedgerEntry,
   Member,
   MemberStatus,
   MemberType,
+  NewInvitation,
   Notice,
   Payment,
   PlanType,
   PrayerDay,
+  Role,
   Tenant,
   TenantStatus,
 } from "./types";
@@ -1349,6 +1352,112 @@ export async function createPlatformPlan(input: PlatformPlanPatch & { id: string
   if (error) throw error;
 }
 
+/** Platform invoice type (super admin billing). */
+export interface PlatformInvoice {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  invoiceNo: string;
+  amountPaise: number;
+  status: "pending" | "paid" | "overdue" | "voided";
+  periodFrom: string;
+  periodTo: string;
+  dueDate: string;
+  paidAt?: string | null;
+  paidAmountPaise?: number | null;
+  createdAt: string;
+}
+
+function toPlatformInvoice(r: Row): PlatformInvoice {
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    tenantName: (r.tenants as any)?.name ?? "",
+    invoiceNo: r.invoice_no,
+    amountPaise: Number(r.amount_paise),
+    status: r.status,
+    periodFrom: r.period_from,
+    periodTo: r.period_to,
+    dueDate: r.due_date,
+    paidAt: r.paid_at ?? null,
+    paidAmountPaise: r.paid_amount_paise === null ? null : Number(r.paid_amount_paise),
+    createdAt: r.created_at,
+  };
+}
+
+/** List all platform invoices (super admin). */
+export async function listPlatformInvoices(): Promise<PlatformInvoice[]> {
+  if (isDemoMode) return [];
+
+  const { data, error } = await client()
+    .from("platform_invoices")
+    .select("*, tenants(name)")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []).map(toPlatformInvoice);
+}
+
+export interface NewPlatformInvoice {
+  tenantId: string;
+  amountPaise: number;
+  periodFrom: string;
+  periodTo: string;
+  dueDate: string;
+}
+
+/** Create a platform invoice (super admin). */
+export async function createPlatformInvoice(input: NewPlatformInvoice): Promise<string> {
+  if (isDemoMode) return `demo-plat-inv-${Date.now()}`;
+
+  const invoiceNo = `PI-${new Date().getFullYear()}-${Math.floor(Math.random() * 100000)
+    .toString()
+    .padStart(5, "0")}`;
+
+  const { data, error } = await client()
+    .from("platform_invoices")
+    .insert({
+      tenant_id: input.tenantId,
+      invoice_no: invoiceNo,
+      amount_paise: input.amountPaise,
+      status: "pending",
+      period_from: input.periodFrom,
+      period_to: input.periodTo,
+      due_date: input.dueDate,
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  return String(data.id);
+}
+
+/** Mark a platform invoice as paid (super admin). */
+export async function markPlatformInvoicePaid(id: string, paidAmountPaise: number): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client()
+    .from("platform_invoices")
+    .update({
+      status: "paid",
+      paid_at: new Date().toISOString(),
+      paid_amount_paise: paidAmountPaise,
+    })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/** Void a platform invoice (super admin). */
+export async function voidPlatformInvoice(id: string): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client()
+    .from("platform_invoices")
+    .update({ status: "voided" })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 export async function listFeePlans(): Promise<FeePlan[]> {
   if (isDemoMode) return demoFeePlans;
 
@@ -1771,6 +1880,102 @@ export async function updateComplaint(
 
   const { error } = await client().from("complaints").update(row).eq("id", id);
   if (error) throw error;
+}
+
+/** Create a team invitation (sadar/secretary/super_admin). */
+export async function createInvitation(input: NewInvitation): Promise<Invitation> {
+  if (isDemoMode) {
+    return {
+      id: `demo-inv-${Date.now()}`,
+      tenantId: "t-bhr",
+      email: input.email,
+      role: input.role,
+      invitedBy: "demo-user",
+      token: `demo-token-${Date.now()}`,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      acceptedAt: null,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  const token = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await client()
+    .from("invitations")
+    .insert({
+      tenant_id: await myTenantId(),
+      email: input.email.toLowerCase().trim(),
+      role: input.role,
+      invited_by: (await client().auth.getUser()).data.user?.id,
+      token,
+      expires_at: expiresAt,
+    })
+    .select("*, tenants(name), profiles(full_name)")
+    .single();
+
+  if (error) throw error;
+  return toInvitation(data);
+}
+
+/** List invitations for the current tenant (sadar/secretary/super_admin). */
+export async function listInvitations(): Promise<Invitation[]> {
+  if (isDemoMode) return [];
+
+  const { data, error } = await client()
+    .from("invitations")
+    .select("*, tenants(name), profiles(full_name)")
+    .eq("tenant_id", await myTenantId())
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []).map(toInvitation);
+}
+
+/** Accept an invitation using its token. Creates the auth user + profile. */
+export async function acceptInvitation(token: string): Promise<{ email: string; role: Role; tenantId: string }> {
+  if (isDemoMode) {
+    return { email: "demo@example.com", role: "member", tenantId: "t-bhr" };
+  }
+
+  // Verify the invite exists and is valid
+  const { data: invite, error: fetchError } = await client()
+    .from("invitations")
+    .select("*, tenants(name)")
+    .eq("token", token)
+    .is("accepted_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+
+  if (fetchError || !invite) throw new Error("Invalid or expired invitation");
+
+  // Mark as accepted
+  const { error: updateError } = await client()
+    .from("invitations")
+    .update({ accepted_at: new Date().toISOString() })
+    .eq("id", invite.id);
+
+  if (updateError) throw updateError;
+
+  return {
+    email: invite.email,
+    role: invite.role,
+    tenantId: invite.tenant_id,
+  };
+}
+
+function toInvitation(r: Row): Invitation {
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    email: r.email,
+    role: r.role,
+    invitedBy: r.invited_by,
+    token: r.token,
+    expiresAt: r.expires_at,
+    acceptedAt: r.accepted_at ?? null,
+    createdAt: r.created_at,
+  };
 }
 
 export interface NewMember {

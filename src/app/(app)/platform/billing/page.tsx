@@ -1,24 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Banknote,
   CheckCircle2,
   CreditCard,
   Download,
+  FileText,
   FlaskConical,
+  Plus,
   Repeat,
   TrendingUp,
   Wallet,
+  X,
 } from "lucide-react";
+import type { PlatformInvoice } from "@/lib/types";
+import {
+  createPlatformInvoice,
+  listPlatformInvoices,
+  markPlatformInvoicePaid,
+  voidPlatformInvoice,
+  listTenants,
+} from "@/lib/repo";
 import type { Tenant } from "@/lib/types";
-import { listTenants } from "@/lib/repo";
 import {
   Badge,
   Button,
   Card,
   CardHeader,
+  Drawer,
   Field,
   Input,
   PageHeader,
@@ -33,25 +44,44 @@ import {
 } from "@/components/ui";
 import { formatDate, formatINR } from "@/lib/utils";
 
+const STATUS_COLOR: Record<string, "brand" | "green" | "amber" | "red" | "slate"> = {
+  pending: "amber",
+  paid: "green",
+  overdue: "red",
+  voided: "slate",
+};
+
 export default function BillingPage() {
   const [retry, setRetry] = useState(true);
   const [autoSuspend, setAutoSuspend] = useState(true);
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [invoices, setInvoices] = useState<PlatformInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [invoiceDrawer, setInvoiceDrawer] = useState<PlatformInvoice | null>(null);
+  const [newInvoice, setNewInvoice] = useState({
+    tenantId: "" as string,
+    amountPaise: 0 as number,
+    periodFrom: "" as string,
+    periodTo: "" as string,
+    dueDate: "" as string,
+  });
 
   useEffect(() => {
     let mounted = true;
-    listTenants()
-      .then((t) => {
+    Promise.all([listTenants(), listPlatformInvoices()])
+      .then(([t, inv]) => {
         if (mounted) {
           setTenants(t);
+          setInvoices(inv);
           setLoading(false);
         }
       })
       .catch((e) => {
         if (mounted) {
-          setError(e instanceof Error ? e.message : "Tenants load nahi hue");
+          setError(e instanceof Error ? e.message : "Data load nahi hua");
           setLoading(false);
         }
       });
@@ -61,8 +91,15 @@ export default function BillingPage() {
   }, []);
 
   const activeTenants = tenants.filter((t) => t.status === "active");
-  const collected = 0; // Would come from platform invoices table
-  const pending = 0;   // Would come from platform invoices table
+  const collected = invoices
+    .filter((i) => i.status === "paid")
+    .reduce((s, i) => s + (i.paidAmountPaise ?? i.amountPaise), 0);
+  const pending = invoices
+    .filter((i) => i.status === "pending")
+    .reduce((s, i) => s + i.amountPaise, 0);
+  const overdue = invoices
+    .filter((i) => i.status === "overdue")
+    .reduce((s, i) => s + i.amountPaise, 0);
 
   if (loading) {
     return (
@@ -91,11 +128,11 @@ export default function BillingPage() {
       <PageHeader
         eyebrow="Platform"
         title="Billing gateway"
-        description="How anjumans pay the platform subscription — separate from member collections. Same plug-and-play key pattern."
+        description="Subscription invoices that anjumans pay to the platform — separate from member collections."
         actions={
-          <Badge tone="green" dot>
-            Auto-billing active
-          </Badge>
+          <Button onClick={() => setDrawerOpen(true)}>
+            <Plus className="h-4 w-4" /> New invoice
+          </Button>
         }
       />
 
@@ -109,42 +146,102 @@ export default function BillingPage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Collected" value={formatINR(collected)} sub="Subscription revenue" icon={Banknote} tone="green" />
         <StatCard label="Outstanding" value={formatINR(pending)} sub="Pending invoices" icon={AlertTriangle} tone="amber" />
+        <StatCard label="Overdue" value={formatINR(overdue)} sub="Past due date" icon={AlertTriangle} tone="red" />
         <StatCard label="Active subscriptions" value={String(activeTenants.length)} sub={`${tenants.length} total tenants`} icon={Repeat} tone="brand" />
-        <StatCard label="Annual run rate" value={formatINR(Math.round(tenants.reduce((s, t) => s + (t.planCycle === "yearly" ? t.planAmountPaise : t.planAmountPaise * 12), 0)))} sub="Based on current plans" icon={TrendingUp} tone="blue" />
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-3">
-        <div className="space-y-5 xl:col-span-2">
+        <div className="xl:col-span-2">
           <Card>
-            <CardHeader title="Subscription invoices" subtitle="Sent automatically 14 days before expiry" />
+            <CardHeader
+              title="Subscription invoices"
+              subtitle="All platform invoices across anjumans"
+              action={
+                <Badge tone={overdue > 0 ? "red" : "green"} dot>
+                  {invoices.length} invoices
+                </Badge>
+              }
+            />
             <TableWrap>
               <thead>
                 <tr className="table-head">
                   <Th>Invoice</Th>
                   <Th>Anjuman</Th>
-                  <Th>Issued</Th>
-                  <Th>Due</Th>
+                  <Th>Period</Th>
+                  <th>Due</th>
                   <Th>Status</Th>
                   <Th className="text-right">Amount</Th>
-                  <Th />
+                  <Th className="text-right">Actions</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
-                <tr className="hover:bg-ink-50/60">
-                  <td className="text-center py-8 text-ink-500" colSpan={7} style={{ display: "table-cell" }}>
-                    Platform invoices table coming soon — for now each tenant's subscription
-                    is managed individually in the Tenants page.
-                  </td>
-                </tr>
+                {invoices.map((inv) => (
+                  <tr key={inv.id} className="hover:bg-ink-50/60">
+                    <Td>
+                      <span className="font-mono text-[11.5px] text-ink-600">{inv.invoiceNo}</span>
+                    </Td>
+                    <Td>
+                      <div className="min-w-0">
+                        <p className="truncate text-[12.5px] font-medium text-ink-900">{inv.tenantName}</p>
+                      </div>
+                    </Td>
+                    <Td className="text-[12px] text-ink-700">
+                      {formatDate(inv.periodFrom)} – {formatDate(inv.periodTo)}
+                    </Td>
+                    <Td className="text-[12px] text-ink-700">{formatDate(inv.dueDate)}</Td>
+                    <Td>
+                      <StatusPill status={inv.status} />
+                    </Td>
+                    <Td className="text-[12px] text-ink-700 text-right">
+                      {formatINR(inv.amountPaise)}
+                    </Td>
+                    <Td className="text-right">
+                      <div className="flex justify-end gap-1">
+                        {inv.status === "pending" && (
+                          <button
+                            onClick={() => {
+                              setInvoiceDrawer(inv);
+                              setDrawerOpen(true);
+                            }}
+                            className="rounded-lg p-1.5 text-ink-500 hover:bg-ink-100"
+                            aria-label="Mark paid"
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            voidPlatformInvoice(inv.id).then(() => {
+                              toast("Invoice voided");
+                              setInvoices((prev) =>
+                                prev.map((i) => (i.id === inv.id ? { ...i, status: "voided" } : i))
+                              );
+                            }).catch((e) => toast(e instanceof Error ? e.message : "Void failed", "error"));
+                          }}
+                          className="rounded-lg p-1.5 text-ink-500 hover:bg-ink-100"
+                          aria-label="Void"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </Td>
+                  </tr>
+                ))}
+                {invoices.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-ink-500">
+                      No platform invoices yet.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </TableWrap>
           </Card>
+        </div>
 
+        <div className="space-y-5">
           <Card>
-            <CardHeader
-              title="Gateway keys"
-              subtitle="Money settles into the platform's own account — this is our revenue, not member money."
-            />
+            <CardHeader title="Gateway keys" subtitle="Money settles into the platform's own account — this is our revenue, not member money." />
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <Field label="Provider">
                 <Select defaultValue="razorpay">
@@ -183,24 +280,47 @@ export default function BillingPage() {
             <CardHeader title="Dunning rules" subtitle="What happens when an anjuman doesn't pay" />
             <div className="divide-y divide-ink-100">
               {[
-                { title: "Send reminder at -14, -7, -1 days", body: "WhatsApp + email to the sadar and secretary.", value: true, set: setRetry },
-                { title: "Auto-retry failed cards", body: "3 attempts over 7 days, then notify.", value: retry, set: setRetry },
-                { title: "Move to read-only after grace", body: "14 days after expiry the workspace becomes read-only.", value: autoSuspend, set: setAutoSuspend },
-                { title: "Never delete tenant data", body: "Suspended accounts keep all history for 12 months.", value: true, set: (_v: boolean) => undefined },
+                {
+                  title: "Send reminder at -14, -7, -1 days",
+                  body: "WhatsApp + email to the sadar and secretary.",
+                  value: true,
+                },
+                {
+                  title: "Auto-retry failed cards",
+                  body: "3 attempts over 7 days, then notify.",
+                  value: retry,
+                },
+                {
+                  title: "Move to read-only after grace",
+                  body: "14 days after expiry the workspace becomes read-only.",
+                  value: autoSuspend,
+                },
+                {
+                  title: "Never delete tenant data",
+                  body: "Suspended accounts keep all history for 12 months.",
+                  value: true,
+                },
               ].map((r) => (
                 <div key={r.title} className="flex items-center justify-between gap-4 px-5 py-3.5">
                   <div>
                     <p className="text-[12.5px] font-medium text-ink-800">{r.title}</p>
                     <p className="text-[11px] text-ink-500">{r.body}</p>
                   </div>
-                  <Switch checked={r.value} onChange={(v) => { r.set(v); toast("Dunning rule updated"); }} />
+                  <Switch
+                    checked={r.value}
+                    onChange={(v) => {
+                      if (r.title.includes("Auto-retry")) setRetry(v);
+                      if (r.title.includes("Move to read-only")) setAutoSuspend(v);
+                      toast("Dunning rule updated");
+                    }}
+                  />
                 </div>
               ))}
             </div>
           </Card>
         </div>
 
-        <div className="space-y-5">
+        <div className="space-y-5 xl:col-span-1">
           <Card>
             <CardHeader title="Payment methods" subtitle="Used for subscription charges" />
             <div className="p-5">
@@ -224,9 +344,7 @@ export default function BillingPage() {
             <CardHeader title="Upcoming renewals" subtitle="Next 90 days" />
             <div className="divide-y divide-ink-100">
               {tenants.length === 0 ? (
-                <div className="px-5 py-8 text-center text-ink-500">
-                  No tenants found
-                </div>
+                <div className="px-5 py-8 text-center text-ink-500">No tenants found</div>
               ) : (
                 tenants.map((t) => (
                   <div key={t.id} className="flex items-center justify-between px-5 py-3">
@@ -256,6 +374,136 @@ export default function BillingPage() {
           </Card>
         </div>
       </div>
+
+      {/* New invoice drawer */}
+      <Drawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title="Create platform invoice"
+        subtitle="Bill an anjuman for their subscription"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateInvoice} loading={saving} disabled={saving}>
+              Create invoice
+            </Button>
+          </div>
+        }
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Anjuman">
+            <Select value={newInvoice.tenantId} onChange={(e) => setNewInvoice({ ...newInvoice, tenantId: e.target.value })}>
+              <option value="">Select anjuman</option>
+              {tenants.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.code})
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Amount (₹)">
+            <Input
+              type="number"
+              value={newInvoice.amountPaise / 100}
+              onChange={(e) => setNewInvoice({ ...newInvoice, amountPaise: Math.round(Number(e.target.value) * 100) })}
+              placeholder="0"
+              inputMode="numeric"
+            />
+          </Field>
+          <Field label="Period from">
+            <Input type="date" value={newInvoice.periodFrom} onChange={(e) => setNewInvoice({ ...newInvoice, periodFrom: e.target.value })} />
+          </Field>
+          <Field label="Period to">
+            <Input type="date" value={newInvoice.periodTo} onChange={(e) => setNewInvoice({ ...newInvoice, periodTo: e.target.value })} />
+          </Field>
+          <Field label="Due date">
+            <Input type="date" value={newInvoice.dueDate} onChange={(e) => setNewInvoice({ ...newInvoice, dueDate: e.target.value })} />
+          </Field>
+        </div>
+      </Drawer>
+
+      {/* Mark paid drawer */}
+      <Drawer
+        open={!!invoiceDrawer}
+        onClose={() => setInvoiceDrawer(null)}
+        title="Mark invoice as paid"
+        subtitle={invoiceDrawer?.invoiceNo}
+        width="max-w-md"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setInvoiceDrawer(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleMarkPaid} loading={saving} disabled={saving}>
+              Mark paid
+            </Button>
+          </div>
+        }
+      >
+        {invoiceDrawer && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Invoice">
+              <span className="font-mono text-[12px] text-ink-600">{invoiceDrawer.invoiceNo}</span>
+            </Field>
+            <Field label="Amount (₹)">
+              <span className="font-medium text-[12px]">{formatINR(invoiceDrawer.amountPaise)}</span>
+            </Field>
+            <Field label="Paid amount (₹)">
+              <Input
+                type="number"
+                value={newInvoice.amountPaise / 100}
+                onChange={(e) => setNewInvoice({ ...newInvoice, amountPaise: Math.round(Number(e.target.value) * 100) })}
+                placeholder="0"
+                inputMode="numeric"
+              />
+            </Field>
+          </div>
+        )}
+      </Drawer>
     </>
   );
+
+  async function handleCreateInvoice() {
+    if (!newInvoice.tenantId || !newInvoice.amountPaise || !newInvoice.periodFrom || !newInvoice.periodTo || !newInvoice.dueDate) {
+      toast("All fields are required", "error");
+      return;
+    }
+    setSaving(true);
+    try {
+      await createPlatformInvoice({
+        tenantId: newInvoice.tenantId,
+        amountPaise: newInvoice.amountPaise,
+        periodFrom: newInvoice.periodFrom,
+        periodTo: newInvoice.periodTo,
+        dueDate: newInvoice.dueDate,
+      });
+      toast("Invoice created");
+      setDrawerOpen(false);
+      setNewInvoice({ tenantId: "", amountPaise: 0, periodFrom: "", periodTo: "", dueDate: "" });
+      const inv = await listPlatformInvoices();
+      setInvoices(inv);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Create failed", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleMarkPaid() {
+    if (!invoiceDrawer) return;
+    setSaving(true);
+    try {
+      await markPlatformInvoicePaid(invoiceDrawer.id, newInvoice.amountPaise);
+      toast("Invoice marked paid");
+      setInvoiceDrawer(null);
+      const inv = await listPlatformInvoices();
+      setInvoices(inv);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Mark failed", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
 }

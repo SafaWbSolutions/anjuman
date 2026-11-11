@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
+import { jsPDF } from "jspdf";
 import {
   CheckSquare,
   Download,
+  FileText,
   Printer,
   Share2,
   Square,
@@ -222,6 +224,71 @@ export default function IdCardsPage() {
     }
   }
 
+  /** Bulk download selected cards (or all visible cards) as a multi-page PDF,
+   * 8 cards per A4 sheet, printable area only. */
+  async function downloadCardsPdf() {
+    const toExport = chosen.length ? chosen : filtered.slice(0, Number(layout));
+    if (toExport.length === 0) return toast("Select at least one member", "error");
+
+    setBusy("pdf");
+    try {
+      const { toBlob } = await import("html-to-image");
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+      const pageWidth = pdf.internal.pageSize.getWidth(); // 210 mm
+      const pageHeight = pdf.internal.pageSize.getHeight(); // 297 mm
+      const cardWidth = 43; // 85mm / 2 = 42.5mm per card
+      const cardHeight = 27; // 54mm / 2 = 27mm per card
+      const gap = 4;
+      const cols = 2;
+      const rows = 4;
+      const xStart = (pageWidth - cols * cardWidth - (cols - 1) * gap) / 2;
+      const yStart = 10;
+
+      let cardIdx = 0;
+      let page = 1;
+
+      for (const m of toExport) {
+        if (cardIdx >= cols * rows) {
+          pdf.addPage();
+          page++;
+          cardIdx = 0;
+        }
+
+        const node = document.querySelector<HTMLElement>(`[data-card-member="${m.id}"]`);
+        if (!node) continue;
+
+        const blob = await toBlob(node, { pixelRatio: 2, backgroundColor: "#ffffff", cacheBust: true });
+        if (!blob) continue;
+
+        const imgData = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(blob);
+          reader.onloadend = () => resolve(reader.result as string);
+        });
+
+        const col = cardIdx % cols;
+        const row = Math.floor(cardIdx / cols);
+        const x = xStart + col * (cardWidth + gap);
+        const y = yStart + row * (cardHeight + gap);
+
+        pdf.addImage(imgData, "PNG", x, y, cardWidth, cardHeight);
+        cardIdx++;
+      }
+
+      const fileName = `${tenant?.code ?? "anjuman"}-id-cards.pdf`;
+      pdf.save(fileName);
+      toast("ID cards PDF download ho gaya");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "PDF banane mein kami rahi", "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (loading) {
     return (
       <>
@@ -328,6 +395,14 @@ export default function IdCardsPage() {
               onClick={() => single && void downloadCard(single)}
             >
               <Download className="h-4 w-4" /> Download
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={chosen.length === 0}
+              loading={busy === "pdf"}
+              onClick={() => void downloadCardsPdf()}
+            >
+              <FileText className="h-4 w-4" /> PDF
             </Button>
             <Button
               variant="secondary"

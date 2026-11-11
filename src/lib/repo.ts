@@ -2217,6 +2217,18 @@ export interface NewMember {
  * Add a member. The database assigns the member ID (BHR-000123-7)
  * inside a per-tenant advisory lock, so two saves can never collide.
  */
+export async function removeMember(
+  memberId: string
+): Promise<"DELETED" | "ARCHIVED"> {
+  if (isDemoMode) return "DELETED";
+
+  const { data, error } = await client().rpc("remove_member", {
+    p_member: memberId,
+  });
+  if (error) throw error;
+  return String(data) === "ARCHIVED" ? "ARCHIVED" : "DELETED";
+}
+
 export async function createMember(input: NewMember): Promise<Member> {
   if (isDemoMode) {
     return {

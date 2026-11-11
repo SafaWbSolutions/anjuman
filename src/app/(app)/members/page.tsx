@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Trash2,
   UserPlus,
   Users,
   Wallet,
@@ -32,6 +33,7 @@ import {
   listInvoices,
   listMembers,
   listPayments,
+  removeMember,
   requestFeeChange,
   saveMemberDetails,
   uploadAvatar,
@@ -410,6 +412,20 @@ export default function MembersPage() {
         onClose={() => setSelected(null)}
         onCreateLogin={(m) => setLoginMember(m)}
         onEdit={(m) => setEditMember(m)}
+        onRemove={async (m) => {
+          try {
+            const result = await removeMember(m.id);
+            toast(
+              result === "ARCHIVED"
+                ? `${m.name} inactive ho gaya (financial history safe hai)`
+                : `${m.name} remove ho gaya`
+            );
+            setSelected(null);
+            await load();
+          } catch (e) {
+            toast(e instanceof Error ? e.message : "Member remove nahi hua", "error");
+          }
+        }}
       />
       <CreateLoginDrawer member={loginMember} onClose={() => setLoginMember(null)} />
       <EditMemberDrawer
@@ -543,6 +559,7 @@ function MemberDrawer({
   onClose,
   onCreateLogin,
   onEdit,
+  onRemove,
 }: {
   member: Member | null;
   invoices: Invoice[];
@@ -552,8 +569,12 @@ function MemberDrawer({
   onClose: () => void;
   onCreateLogin: (member: Member) => void;
   onEdit: (member: Member) => void;
+  onRemove: (member: Member) => Promise<void>;
 }) {
+  const { user } = useAuth();
   const [receipt, setReceipt] = useState<ReceiptInfo | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
   if (!member) return null;
 
   const dues = invoices.filter(
@@ -566,6 +587,7 @@ function MemberDrawer({
     .filter((i) => i.memberId === member.id)
     .reduce((s, i) => s + i.paidPaise, 0);
   const dueTotal = dues.reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0);
+  const canRemove = user?.role === "sadar" || user?.role === "super_admin";
 
   return (
     <Drawer
@@ -581,6 +603,29 @@ function MemberDrawer({
             <span className="font-medium text-ink-700">{tenantName}</span>
           </p>
           <div className="flex flex-wrap gap-2">
+            {canRemove && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="text-red-600"
+                loading={removing}
+                onClick={async () => {
+                  if (!confirmRemove) {
+                    setConfirmRemove(true);
+                    return;
+                  }
+                  setRemoving(true);
+                  try {
+                    await onRemove(member);
+                  } finally {
+                    setRemoving(false);
+                  }
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {confirmRemove ? "Confirm remove" : "Remove"}
+              </Button>
+            )}
             <Button variant="secondary" size="sm" onClick={() => onEdit(member)}>
               <Pencil className="h-3.5 w-3.5" /> Edit
             </Button>
@@ -600,6 +645,13 @@ function MemberDrawer({
               <Wallet className="h-3.5 w-3.5" /> Collect
             </Button>
           </div>
+          {confirmRemove && (
+            <p className="w-full rounded-lg bg-red-50 px-3 py-2 text-[11.5px] text-red-700">
+              Pakka remove karna hai? Jis member ka koi receipt ya paid invoice hai wo
+              delete nahi hoga — ledger safe rakhne ke liye sirf <b>inactive</b> ho
+              jayega aur uski login access band ho jayegi.
+            </p>
+          )}
         </div>
       }
     >

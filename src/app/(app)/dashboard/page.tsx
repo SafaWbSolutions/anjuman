@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Clock,
   CreditCard,
+  Download,
   HandCoins,
   IdCard,
   Layers,
@@ -35,6 +36,7 @@ import type {
   Tenant,
 } from "@/lib/types";
 import {
+  getCurrentTenant,
   getDashboard,
   getWorkQueue,
   listApprovals,
@@ -50,6 +52,8 @@ import {
   type WorkQueue,
 } from "@/lib/repo";
 import { formatINR, formatDate, periodLabel, cn } from "@/lib/utils";
+import { activeTenant } from "@/lib/mock";
+import { ReceiptDrawer, receiptOf, type ReceiptInfo } from "@/components/receipt";
 import {
   Avatar,
   Badge,
@@ -649,6 +653,8 @@ function MemberDashboard() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [receipt, setReceipt] = useState<ReceiptInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -656,17 +662,19 @@ function MemberDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [memberRows, invoiceRows, paymentRows, noticeRows] = await Promise.all([
+      const [memberRows, invoiceRows, paymentRows, noticeRows, tenantRow] = await Promise.all([
         listMembers(),
         listInvoices(),
         listPayments(),
         listNotices(),
+        getCurrentTenant(),
       ]);
       const me =
         memberRows.find((m) => m.id === user?.memberId) ??
         memberRows.find((m) => m.phone && m.phone === user?.phone) ??
         (user?.role === "member" ? memberRows[0] ?? null : null);
       setMember(me);
+      setTenant(tenantRow);
       if (me) {
         setInvoices(invoiceRows.filter((i) => i.memberId === me.id));
         setPayments(paymentRows.filter((p) => p.memberId === me.id));
@@ -783,17 +791,12 @@ function MemberDashboard() {
           <div className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-[13px] font-semibold text-ink-800">
-                Payment history
+                Payment history ({payments.length})
               </p>
-              <Link
-                href="/finance/collections/"
-                className="text-[12px] font-medium text-brand-700"
-              >
-                View all
-              </Link>
+              <p className="text-[11.5px] text-ink-400">Slip dobara download karo</p>
             </div>
             <div className="space-y-2">
-              {payments.slice(0, 4).map((p) => (
+              {payments.map((p) => (
                 <div
                   key={p.id}
                   className="flex items-center gap-3 rounded-xl border border-ink-100 px-3.5 py-2.5"
@@ -812,6 +815,15 @@ function MemberDashboard() {
                   <span className="text-[13px] font-medium text-ink-900">
                     {formatINR(p.amountPaise)}
                   </span>
+                  {p.status === "verified" && (
+                    <button
+                      className="inline-flex items-center gap-1 rounded-lg border border-ink-200 px-2 py-1 text-[11.5px] font-medium text-brand-700 hover:bg-brand-50"
+                      onClick={() => setReceipt(receiptOf({ ...p, member }))}
+                      title="Download / share receipt"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Slip
+                    </button>
+                  )}
                 </div>
               ))}
               {payments.length === 0 && (
@@ -884,6 +896,12 @@ function MemberDashboard() {
           </Card>
         </div>
       </div>
+
+      <ReceiptDrawer
+        receipt={receipt}
+        tenant={tenant ?? activeTenant}
+        onClose={() => setReceipt(null)}
+      />
     </>
   );
 }

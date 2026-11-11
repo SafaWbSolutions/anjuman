@@ -36,6 +36,7 @@ import {
 } from "@/lib/repo";
 import { isDemoMode } from "@/lib/supabase";
 import { formatINR, formatDate, periodLabel, cn } from "@/lib/utils";
+import { ReceiptDrawer, receiptOf, type ReceiptInfo } from "@/components/receipt";
 import {
   Avatar,
   Badge,
@@ -402,6 +403,7 @@ export default function MembersPage() {
         member={selected}
         invoices={invoices}
         payments={payments}
+        tenant={tenant ?? activeTenant}
         tenantName={tenantName}
         onClose={() => setSelected(null)}
         onCreateLogin={(m) => setLoginMember(m)}
@@ -534,6 +536,7 @@ function MemberDrawer({
   member,
   invoices,
   payments,
+  tenant,
   tenantName,
   onClose,
   onCreateLogin,
@@ -542,11 +545,13 @@ function MemberDrawer({
   member: Member | null;
   invoices: Invoice[];
   payments: Payment[];
+  tenant: Tenant;
   tenantName: string;
   onClose: () => void;
   onCreateLogin: (member: Member) => void;
   onEdit: (member: Member) => void;
 }) {
+  const [receipt, setReceipt] = useState<ReceiptInfo | null>(null);
   if (!member) return null;
 
   const dues = invoices.filter(
@@ -701,16 +706,21 @@ function MemberDrawer({
       </div>
 
       <div className="mt-6">
-        <p className="mb-2 text-[13px] font-semibold text-ink-800">
-          Payment history ({pays.length})
-        </p>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[13px] font-semibold text-ink-800">
+            Payment history ({pays.length})
+          </p>
+          <p className="text-[11px] text-ink-400">
+            Purana slip dobara download karo
+          </p>
+        </div>
         {pays.length === 0 ? (
           <p className="text-[12.5px] text-ink-400">No payments yet.</p>
         ) : (
           <div className="divide-y divide-ink-100 rounded-xl border border-ink-100">
-            {pays.slice(0, 8).map((p) => (
-              <div key={p.id} className="flex items-center justify-between px-4 py-2.5">
-                <div>
+            {pays.map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
+                <div className="min-w-0">
                   <p className="font-mono text-[11.5px] text-ink-600">
                     {p.receiptNo}
                   </p>
@@ -718,17 +728,32 @@ function MemberDrawer({
                     {formatDate(p.createdAt, true)} · {p.method.toUpperCase()}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2">
                   <StatusPill status={p.status} />
                   <span className="text-[12.5px] font-medium text-ink-900">
                     {formatINR(p.amountPaise)}
                   </span>
+                  {p.status === "verified" && (
+                    <button
+                      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-medium text-brand-700 hover:bg-brand-50"
+                      onClick={() => setReceipt(receiptOf({ ...p, member }))}
+                      title="Download / share receipt"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Slip
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      <ReceiptDrawer
+        receipt={receipt}
+        tenant={tenant}
+        onClose={() => setReceipt(null)}
+      />
     </Drawer>
   );
 }

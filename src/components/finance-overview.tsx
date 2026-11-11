@@ -26,7 +26,15 @@ import {
 import { isDemoMode } from "@/lib/supabase";
 import { formatDate, formatINR, periodLabel, cn } from "@/lib/utils";
 import { downloadCsv, downloadPdfTable } from "@/lib/export";
-import { Button, Card, Drawer, Input, toast } from "@/components/ui";
+import {
+  Button,
+  Card,
+  Drawer,
+  Input,
+  StatCard,
+  toast,
+  type Tone,
+} from "@/components/ui";
 
 interface TableData {
   title: string;
@@ -41,17 +49,9 @@ interface CardSpec {
   sub: string;
   value: number;
   icon: typeof Wallet;
-  tone: "green" | "amber" | "brand" | "slate" | "violet";
+  tone: Tone;
   table: () => TableData;
 }
-
-const TONES: Record<CardSpec["tone"], string> = {
-  green: "bg-emerald-50 text-emerald-700",
-  amber: "bg-amber-50 text-amber-700",
-  brand: "bg-brand-50 text-brand-700",
-  slate: "bg-ink-100 text-ink-700",
-  violet: "bg-violet-50 text-violet-700",
-};
 
 /**
  * Full anjuman financial analysis with a custom date range. Every card is
@@ -253,7 +253,7 @@ export function FinanceOverview({
       sub: `Fund balance ${formatINR(fundBalanceOf("gift"))}`,
       value: gift,
       icon: Gift,
-      tone: "violet",
+      tone: "red",
       table: () => ({
         title: "Gift / donation fund",
         subtitle: label,
@@ -292,7 +292,7 @@ export function FinanceOverview({
       sub: `Fund balance ${formatINR(fundBalanceOf("zakat"))}`,
       value: zakat,
       icon: Banknote,
-      tone: "green",
+      tone: "blue",
       table: () => ({
         title: "Zakat",
         subtitle: label,
@@ -381,7 +381,7 @@ export function FinanceOverview({
       sub: "Paid, pending, since",
       value: members.length,
       icon: Users,
-      tone: "slate",
+      tone: "blue",
       table: () => ({
         title: "Member-wise paid / pending",
         subtitle: "All time",
@@ -486,29 +486,17 @@ export function FinanceOverview({
           </p>
         )}
 
-        <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3.5 p-5 sm:grid-cols-2 xl:grid-cols-4">
           {cards.map((c) => (
-            <button
+            <StatCard
               key={c.key}
+              label={c.label}
+              value={c.key === "members" ? String(c.value) : formatINR(c.value)}
+              sub={c.sub}
+              icon={c.icon}
+              tone={c.tone}
               onClick={() => setTable(c.table())}
-              className="rounded-xl border border-ink-100 p-3.5 text-left transition hover:border-brand-300 hover:bg-brand-50/30"
-            >
-              <span
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-lg",
-                  TONES[c.tone]
-                )}
-              >
-                <c.icon className="h-4 w-4" />
-              </span>
-              <p className="mt-2 text-[11px] uppercase tracking-wide text-ink-400">
-                {c.label}
-              </p>
-              <p className="text-[15px] font-semibold text-ink-900">
-                {c.key === "members" ? c.value : formatINR(c.value)}
-              </p>
-              <p className="text-[11px] text-ink-500">{c.sub}</p>
-            </button>
+            />
           ))}
         </div>
       </Card>

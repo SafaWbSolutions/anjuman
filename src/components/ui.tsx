@@ -534,6 +534,69 @@ export function EmptyState({
 
 /* ── Stat card ──────────────────────────────────────────────── */
 
+/** Bold, multi-colour card skins — one per tone, used by StatCard. */
+const STAT_SKINS: Record<
+  Tone,
+  { card: string; glow: string; icon: string; label: string; value: string; chip: string }
+> = {
+  green: {
+    card: "from-emerald-500/[0.09] via-white to-white border-emerald-200/70 hover:border-emerald-300",
+    glow: "bg-emerald-400/25",
+    icon: "from-emerald-500 to-teal-600 shadow-emerald-500/35",
+    label: "text-emerald-800/70",
+    value: "text-emerald-950",
+    chip: "bg-emerald-100 text-emerald-700",
+  },
+  amber: {
+    card: "from-amber-500/[0.10] via-white to-white border-amber-200/70 hover:border-amber-300",
+    glow: "bg-amber-400/25",
+    icon: "from-amber-500 to-orange-600 shadow-amber-500/35",
+    label: "text-amber-900/70",
+    value: "text-amber-950",
+    chip: "bg-amber-100 text-amber-800",
+  },
+  red: {
+    card: "from-rose-500/[0.09] via-white to-white border-rose-200/70 hover:border-rose-300",
+    glow: "bg-rose-400/25",
+    icon: "from-rose-500 to-red-600 shadow-rose-500/35",
+    label: "text-rose-900/70",
+    value: "text-rose-950",
+    chip: "bg-rose-100 text-rose-800",
+  },
+  blue: {
+    card: "from-sky-500/[0.09] via-white to-white border-sky-200/70 hover:border-sky-300",
+    glow: "bg-sky-400/25",
+    icon: "from-sky-500 to-blue-600 shadow-sky-500/35",
+    label: "text-sky-900/70",
+    value: "text-sky-950",
+    chip: "bg-sky-100 text-sky-800",
+  },
+  violet: {
+    card: "from-violet-500/[0.09] via-white to-white border-violet-200/70 hover:border-violet-300",
+    glow: "bg-violet-400/25",
+    icon: "from-violet-500 to-purple-600 shadow-violet-500/35",
+    label: "text-violet-900/70",
+    value: "text-violet-950",
+    chip: "bg-violet-100 text-violet-800",
+  },
+  brand: {
+    card: "from-brand-500/[0.10] via-white to-white border-brand-200/70 hover:border-brand-300",
+    glow: "bg-brand-400/25",
+    icon: "from-brand-500 to-emerald-600 shadow-brand-500/35",
+    label: "text-brand-900/70",
+    value: "text-brand-950",
+    chip: "bg-brand-100 text-brand-800",
+  },
+  slate: {
+    card: "from-slate-500/[0.08] via-white to-white border-slate-200 hover:border-slate-300",
+    glow: "bg-slate-400/20",
+    icon: "from-slate-600 to-ink-800 shadow-slate-500/30",
+    label: "text-slate-600",
+    value: "text-ink-900",
+    chip: "bg-slate-100 text-slate-700",
+  },
+};
+
 export function StatCard({
   label,
   value,
@@ -541,6 +604,7 @@ export function StatCard({
   icon: Icon,
   tone = "brand",
   trend,
+  onClick,
 }: {
   label: string;
   value: string;
@@ -548,32 +612,67 @@ export function StatCard({
   icon: LucideIcon;
   tone?: Tone;
   trend?: string;
+  onClick?: () => void;
 }) {
+  const skin = STAT_SKINS[tone];
+  const Tag = onClick ? "button" : "div";
+
   return (
-    <Card className="p-5">
-      <div className="flex items-start justify-between gap-3">
+    <Tag
+      onClick={onClick}
+      className={cn(
+        "group relative w-full overflow-hidden rounded-2xl border bg-gradient-to-br p-5 text-left shadow-sm transition-all duration-200",
+        skin.card,
+        onClick && "cursor-pointer hover:-translate-y-0.5 hover:shadow-lg"
+      )}
+    >
+      <span
+        className={cn(
+          "pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full blur-2xl transition-opacity duration-200",
+          skin.glow,
+          onClick && "group-hover:opacity-90"
+        )}
+      />
+      <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[12.5px] font-medium text-ink-500">{label}</p>
-          <p className="mt-1.5 truncate text-2xl font-semibold tracking-tight text-ink-900">
+          <p
+            className={cn(
+              "text-[10.5px] font-bold uppercase tracking-[0.09em]",
+              skin.label
+            )}
+          >
+            {label}
+          </p>
+          <p
+            className={cn(
+              "mt-1.5 truncate text-[26px] font-extrabold leading-none tracking-tight",
+              skin.value
+            )}
+          >
             {value}
           </p>
-          {sub && <p className="mt-1 text-[12px] text-ink-500">{sub}</p>}
+          {sub && (
+            <p className="mt-1.5 truncate text-[11.5px] font-medium text-ink-500">
+              {sub}
+            </p>
+          )}
         </div>
         <span
           className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset",
-            TONES[tone]
+            "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-lg transition-transform duration-200",
+            skin.icon,
+            onClick && "group-hover:scale-105"
           )}
         >
           <Icon className="h-5 w-5" />
         </span>
       </div>
       {trend && (
-        <p className="mt-3 inline-flex items-center gap-1 text-[12px] font-medium text-emerald-600">
+        <p className="relative mt-3 inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-[11.5px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
           <Check className="h-3.5 w-3.5" /> {trend}
         </p>
       )}
-    </Card>
+    </Tag>
   );
 }
 

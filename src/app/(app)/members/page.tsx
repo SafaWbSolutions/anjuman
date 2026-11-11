@@ -73,6 +73,16 @@ function toCsv(rows: Member[]): string {
   return [head.join(","), ...body].join("\r\n");
 }
 
+/** Supabase returns plain objects, not Error instances — keep the real reason. */
+function errorText(e: unknown, fallback: string): string {
+  if (e instanceof Error && e.message) return e.message;
+  if (e && typeof e === "object" && "message" in e) {
+    const msg = (e as { message?: unknown }).message;
+    if (typeof msg === "string" && msg) return msg;
+  }
+  return fallback;
+}
+
 export default function MembersPage() {
   const [q, setQ] = useState("");
   const [mohalla, setMohalla] = useState("all");
@@ -425,7 +435,7 @@ export default function MembersPage() {
             setSelected(null);
             await load();
           } catch (e) {
-            toast(e instanceof Error ? e.message : "Member remove nahi hua", "error");
+            toast(errorText(e, "Member remove nahi hua"), "error");
           }
         }}
         onRequestReset={async (m, reason) => {
@@ -433,7 +443,7 @@ export default function MembersPage() {
             await requestPaymentReset(m.id, reason);
             toast("Reset request Khajanchi ke paas chali gayi — approve hone par payments reset honge");
           } catch (e) {
-            toast(e instanceof Error ? e.message : "Reset request fail", "error");
+            toast(errorText(e, "Reset request fail"), "error");
           }
         }}
       />
@@ -603,6 +613,11 @@ function MemberDrawer({
     .reduce((s, i) => s + i.paidPaise, 0);
   const dueTotal = dues.reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0);
   const canRemove = user?.role === "sadar" || user?.role === "super_admin";
+  const activePaymentCount = payments.filter(
+    (p) =>
+      p.memberId === member.id &&
+      (p.status === "verified" || p.status === "pending")
+  ).length;
 
   return (
     <Drawer
@@ -625,6 +640,12 @@ function MemberDrawer({
                 variant="secondary"
                 size="sm"
                 className="text-amber-700"
+                disabled={activePaymentCount === 0}
+                title={
+                  activePaymentCount === 0
+                    ? "Is member ka koi verified/pending payment nahi hai"
+                    : "Reset request Khajanchi ke paas jayegi"
+                }
                 onClick={() => setResetOpen((v) => !v)}
               >
                 <RotateCcw className="h-3.5 w-3.5" /> Reset payments

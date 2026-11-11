@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BadgeCheck, Loader2, ShieldAlert, ShieldCheck } from "lucide-react";
-import { memberByCode, activeTenant } from "@/lib/mock";
+import { findMemberByCode, getCurrentTenant } from "@/lib/repo";
 import { Badge, Button, Card } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 
@@ -14,15 +14,32 @@ import { formatDate } from "@/lib/utils";
  */
 export default function VerifyPage() {
   const [code, setCode] = useState<string | null>(null);
+  const [member, setMember] = useState<Awaited<ReturnType<typeof findMemberByCode>>>(null);
+  const [tenant, setTenant] = useState<Awaited<ReturnType<typeof getCurrentTenant>>>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setCode(params.get("id")?.trim().toUpperCase() ?? "");
-    setLoading(false);
+    const q = params.get("id")?.trim().toUpperCase() ?? "";
+    setCode(q || null);
   }, []);
 
-  const member = code && code !== "" ? memberByCode(code) : undefined;
+  useEffect(() => {
+    if (!code) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    Promise.all([findMemberByCode(code), getCurrentTenant()])
+      .then(([m, t]) => {
+        setMember(m);
+        setTenant(t);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "Verification failed"))
+      .finally(() => setLoading(false));
+  }, [code]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-ink-50 px-5 py-10">
@@ -44,6 +61,14 @@ export default function VerifyPage() {
             <Loader2 className="h-5 w-5 animate-spin" />
             <p className="text-sm">Checking member ID…</p>
           </Card>
+        ) : error ? (
+          <Card className="p-8 text-center border-red-200 bg-red-50">
+            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-red-100 text-red-600">
+              <ShieldAlert className="h-6 w-6" />
+            </span>
+            <p className="mt-3 text-[15px] font-semibold text-ink-900">Verification error</p>
+            <p className="mt-1 text-[12.5px] text-ink-500">{error}</p>
+          </Card>
         ) : member ? (
           <Card className="overflow-hidden">
             <div className="bg-ink-900 p-5 text-white">
@@ -62,16 +87,16 @@ export default function VerifyPage() {
               </p>
             </div>
             <div className="space-y-2.5 p-5 text-[12.5px]">
-              <Row label="Anjuman" value={activeTenant.name} />
-              <Row label="Masjid" value={activeTenant.masjid} />
-              <Row label="Village" value={`${activeTenant.village}, ${activeTenant.district}`} />
+              <Row label="Anjuman" value={tenant?.name ?? "—"} />
+              <Row label="Masjid" value={tenant?.masjid ?? "—"} />
+              <Row label="Village" value={`${tenant?.village ?? ""}, ${tenant?.district ?? ""}`.trim() || "—"} />
               <Row label="Household" value={`#${member.household} · ${member.mohalla}`} />
               <Row label="Type" value={member.type} />
               <Row label="Member since" value={formatDate(member.joinedOn)} />
               <div className="flex items-center justify-between pt-1">
                 <span className="text-ink-500">Status</span>
-                <Badge tone="green" dot>
-                  Active
+                <Badge tone={member.status === "active" ? "green" : "amber"} dot>
+                  {member.status}
                 </Badge>
               </div>
             </div>

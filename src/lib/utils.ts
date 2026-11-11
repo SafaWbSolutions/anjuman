@@ -42,6 +42,34 @@ export function formatDate(iso: string, withTime = false) {
   });
 }
 
+/**
+ * Download rows as a CSV file (opens in Excel). Values are quoted when
+ * they contain a comma, quote or newline. A BOM is prepended so Excel
+ * reads the ₹ sign correctly.
+ */
+export function downloadCSV(filename: string, rows: (string | number)[][]) {
+  const csv = rows
+    .map((row) =>
+      row
+        .map((cell) => {
+          const s = cell === null || cell === undefined ? "" : String(cell);
+          return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        })
+        .join(",")
+    )
+    .join("\r\n");
+
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function initials(name: string) {
   return name
     .replace(/[^\p{L}\p{N}\s]/gu, "")

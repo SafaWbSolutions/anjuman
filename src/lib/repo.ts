@@ -1533,3 +1533,43 @@ export async function rejectDonation(id: string, reason: string): Promise<void> 
   });
   if (error) throw error;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Reminders
+// ═══════════════════════════════════════════════════════════════
+
+export interface ReminderResult {
+  created: number;
+  skipped?: number;
+  reason: string;
+  period: string;
+}
+
+/**
+ * Queue dues reminders for a period. The database dedupes per
+ * invoice/day, and the nightly job also calls this automatically —
+ * so pressing the button can never double-send.
+ */
+export async function queueReminders(
+  period?: string,
+  force = true
+): Promise<ReminderResult> {
+  if (isDemoMode) {
+    return { created: 0, reason: "demo_mode", period: period ?? "" };
+  }
+
+  const { data, error } = await client().rpc("queue_reminders", {
+    p_tenant: await myTenantId(),
+    p_period: period ?? null,
+    p_force: force,
+  });
+  if (error) throw error;
+
+  const r = (data ?? {}) as Row;
+  return {
+    created: num(r.created),
+    skipped: r.skipped === undefined ? undefined : num(r.skipped),
+    reason: String(r.reason ?? "queued"),
+    period: String(r.period ?? period ?? ""),
+  };
+}

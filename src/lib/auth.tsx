@@ -237,7 +237,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: email ?? "",
         password: password ?? "",
       });
-      if (error) throw error;
+      if (error) {
+        // Wrong password and "your account is suspended" look identical to
+        // Supabase. Ask the DB why so the user sees the real reason.
+        const { data: blocked } = await supabase.rpc("login_block_reason", {
+          p_email: email ?? "",
+        });
+        if (typeof blocked === "string" && blocked) throw new Error(blocked);
+        throw error;
+      }
       if (!data.user || !data.session) {
         throw new Error("Email confirm nahi hua. Apna inbox check karein, phir login karein.");
       }

@@ -24,6 +24,7 @@ import { members, complaints, approvals } from "@/lib/mock";
 import { generateInvoices, getWorkQueue, listComplaints } from "@/lib/repo";
 import { isDemoMode } from "@/lib/supabase";
 import { Avatar, Badge, Toaster, toast } from "@/components/ui";
+import { MadeBy } from "@/components/brand";
 
 const iconFor = (name: string): LucideIcon =>
   (Icons[name as keyof typeof Icons] as LucideIcon) ?? Icons.Circle;
@@ -386,6 +387,9 @@ function SidebarContent({
       </nav>
 
       <div className="border-t border-white/10 p-3">
+        <div className="mb-2.5 rounded-xl border border-white/10 bg-gradient-to-r from-brand-500/10 via-white/[0.04] to-sky-500/10 px-2.5 py-2">
+          <MadeBy tone="dark" />
+        </div>
         <div className="flex items-center gap-2.5 rounded-xl px-2 py-2">
           <Link
             href="/profile/"

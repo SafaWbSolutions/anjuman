@@ -44,12 +44,12 @@ export async function loadSessionUser(userId: string): Promise<SessionUser | nul
     // reactivating the tenant restores every login and all data as-is.
     if (tenantStatus === "suspended") {
       throw new Error(
-        "Ye anjuman suspend hai. Platform admin ke reactivate karne tak koi bhi login nahi kar sakta. Aapka poora data surakshit hai."
+        "Aapka Account Suspend kar diya gaya hai. Admin se contact karen."
       );
     }
     if (tenantStatus === "read_only") {
       throw new Error(
-        "Is anjuman ka plan expire ho gaya hai. Platform admin se renew / reactivate karwao. Aapka poora data surakshit hai."
+        "Aapke Anjuman ka plan expire ho gaya hai. Renewal ke liye Admin se contact karen."
       );
     }
   }

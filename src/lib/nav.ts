@@ -58,6 +58,7 @@ export const NAV: NavSection[] = [
   {
     title: "Settings",
     items: [
+      { label: "Contact Admin", href: "/contact-admin/", icon: "LifeBuoy", roles: ["sadar", "secretary"] },
       { label: "My Profile", href: "/profile/", icon: "UserRound", roles: ALL },
       { label: "Anjuman Profile", href: "/settings/anjuman/", icon: "Building2", roles: ["sadar", "secretary"] },
       { label: "Payments", href: "/settings/payments/", icon: "CreditCard", roles: ["sadar", "khajanchi"] },
@@ -73,6 +74,7 @@ export const NAV: NavSection[] = [
       { label: "Team & Roles", href: "/platform/team/", icon: "ShieldCheck", roles: ["super_admin"] },
       { label: "Plans", href: "/platform/plans/", icon: "Layers", roles: ["super_admin"] },
       { label: "Billing Gateway", href: "/platform/billing/", icon: "Landmark", roles: ["super_admin"] },
+      { label: "Support Inbox", href: "/platform/support/", icon: "Inbox", roles: ["super_admin"] },
     ],
   },
 ];

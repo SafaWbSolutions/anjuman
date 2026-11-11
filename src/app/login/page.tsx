@@ -19,6 +19,8 @@ import {
 import { useAuth } from "@/lib/auth";
 import { ROLE_LABEL, type Role } from "@/lib/types";
 import { Button, Input } from "@/components/ui";
+import { MadeBy } from "@/components/brand";
+import { sendPublicSupportMessage } from "@/lib/repo";
 import { cn } from "@/lib/utils";
 
 const ROLE_CARDS: {
@@ -70,6 +72,10 @@ export default function LoginPage() {
   const [resetToken, setResetToken] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [resetBusy, setResetBusy] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpName, setHelpName] = useState("");
+  const [helpMessage, setHelpMessage] = useState("");
+  const [helpBusy, setHelpBusy] = useState(false);
 
   /** Show the real reason — Supabase errors are not always Error objects. */
   function msgOf(e: unknown, fallback: string) {
@@ -144,6 +150,28 @@ export default function LoginPage() {
       setError(msgOf(err, "Reset code nahi bheja ja saka"));
     } finally {
       setResetBusy(false);
+    }
+  }
+
+  async function sendHelp(e: React.FormEvent) {
+    e.preventDefault();
+    setHelpBusy(true);
+    try {
+      await sendPublicSupportMessage(
+        resetEmail || email,
+        helpName,
+        "Login page request",
+        helpMessage
+      );
+      setHelpOpen(false);
+      setHelpMessage("");
+      setNotice(
+        "Message admin ko bhej diya gaya. Wo aapke email par ya anjuman reactivate karke jawab denge."
+      );
+    } catch (err) {
+      setError(msgOf(err, "Message nahi gaya"));
+    } finally {
+      setHelpBusy(false);
     }
   }
 
@@ -269,6 +297,10 @@ export default function LoginPage() {
             </p>
           </div>
         </div>
+
+        <div className="relative mt-5 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+          <MadeBy tone="dark" />
+        </div>
       </div>
 
       {/* ── Auth panel ──────────────────────────────────────── */}
@@ -308,6 +340,50 @@ export default function LoginPage() {
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{notice}</span>
             </div>
+          )}
+
+          {helpOpen && (
+            <form
+              onSubmit={sendHelp}
+              className="mt-4 space-y-3 rounded-2xl border border-ink-200 bg-white p-3.5"
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-[12.5px] font-semibold text-ink-800">
+                  Contact Admin
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setHelpOpen(false)}
+                  className="text-[11.5px] text-ink-400 hover:text-ink-700"
+                >
+                  Close
+                </button>
+              </div>
+              <Input
+                icon={Mail}
+                type="email"
+                required
+                value={resetEmail || email}
+                onChange={(e) => setResetEmail(e.target.value)}
+                placeholder="Aapka email"
+              />
+              <Input
+                value={helpName}
+                onChange={(e) => setHelpName(e.target.value)}
+                placeholder="Aapka naam (optional)"
+              />
+              <textarea
+                required
+                rows={3}
+                value={helpMessage}
+                onChange={(e) => setHelpMessage(e.target.value)}
+                placeholder="Problem likho — e.g. meri society suspend hai, reactivate karwaani hai."
+                className="w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-[13px] text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              />
+              <Button type="submit" className="w-full" loading={helpBusy}>
+                Send to Admin
+              </Button>
+            </form>
           )}
 
           {demoMode ? (
@@ -569,6 +645,18 @@ export default function LoginPage() {
             <Lock className="h-3 w-3" />
             <span>Your data is isolated per anjuman. We never share it.</span>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              setHelpOpen(true);
+              setError(null);
+              setNotice(null);
+            }}
+            className="mx-auto mt-2 block text-center text-[11.5px] font-medium text-brand-700 hover:underline"
+          >
+            Login me problem? Contact Admin
+          </button>
+          <MadeBy tone="light" className="mt-4" />
         </div>
       </div>
     </div>

@@ -2553,3 +2553,80 @@ export async function queueReminders(
     period: String(r.period ?? period ?? ""),
   };
 }
+
+// ── Sadar → Platform admin support messages ──────────────────────
+export interface SupportMessage {
+  id: string;
+  tenantId: string | null;
+  tenantName: string;
+  name: string;
+  email: string;
+  phone: string;
+  subject: string;
+  message: string;
+  status: "open" | "resolved";
+  createdAt: string;
+}
+
+export async function sendSupportMessage(
+  subject: string,
+  message: string
+): Promise<void> {
+  if (isDemoMode) return;
+  const { error } = await client().rpc("send_support_message", {
+    p_subject: subject,
+    p_message: message,
+  });
+  if (error) throw error;
+}
+
+export async function listSupportMessages(): Promise<SupportMessage[]> {
+  if (isDemoMode) return [];
+
+  const { data, error } = await client()
+    .from("support_messages")
+    .select("*, tenants(name)")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  return ((data ?? []) as Row[]).map((r) => ({
+    id: r.id,
+    tenantId: r.tenant_id ?? null,
+    tenantName: (r.tenants as Row | null)?.name ?? "",
+    name: r.name ?? "",
+    email: r.email ?? "",
+    phone: r.phone ?? "",
+    subject: r.subject ?? "",
+    message: r.message ?? "",
+    status: r.status === "resolved" ? "resolved" : "open",
+    createdAt: r.created_at,
+  }));
+}
+
+export async function setSupportMessageStatus(
+  id: string,
+  status: "open" | "resolved"
+): Promise<void> {
+  if (isDemoMode) return;
+  const { error } = await client()
+    .from("support_messages")
+    .update({ status })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function sendPublicSupportMessage(
+  email: string,
+  name: string,
+  subject: string,
+  message: string
+): Promise<void> {
+  if (isDemoMode) return;
+  const { error } = await client().rpc("send_public_support_message", {
+    p_email: email,
+    p_name: name,
+    p_subject: subject,
+    p_message: message,
+  });
+  if (error) throw error;
+}

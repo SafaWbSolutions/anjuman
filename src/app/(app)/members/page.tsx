@@ -13,6 +13,7 @@ import {
   Phone,
   Plus,
   RefreshCw,
+  RotateCcw,
   Save,
   Search,
   Trash2,
@@ -35,6 +36,7 @@ import {
   listPayments,
   removeMember,
   requestFeeChange,
+  requestPaymentReset,
   saveMemberDetails,
   uploadAvatar,
 } from "@/lib/repo";
@@ -426,6 +428,14 @@ export default function MembersPage() {
             toast(e instanceof Error ? e.message : "Member remove nahi hua", "error");
           }
         }}
+        onRequestReset={async (m, reason) => {
+          try {
+            await requestPaymentReset(m.id, reason);
+            toast("Reset request Khajanchi ke paas chali gayi — approve hone par payments reset honge");
+          } catch (e) {
+            toast(e instanceof Error ? e.message : "Reset request fail", "error");
+          }
+        }}
       />
       <CreateLoginDrawer member={loginMember} onClose={() => setLoginMember(null)} />
       <EditMemberDrawer
@@ -560,6 +570,7 @@ function MemberDrawer({
   onCreateLogin,
   onEdit,
   onRemove,
+  onRequestReset,
 }: {
   member: Member | null;
   invoices: Invoice[];
@@ -570,11 +581,15 @@ function MemberDrawer({
   onCreateLogin: (member: Member) => void;
   onEdit: (member: Member) => void;
   onRemove: (member: Member) => Promise<void>;
+  onRequestReset: (member: Member, reason: string) => Promise<void>;
 }) {
   const { user } = useAuth();
   const [receipt, setReceipt] = useState<ReceiptInfo | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetReason, setResetReason] = useState("");
+  const [resetting, setResetting] = useState(false);
   if (!member) return null;
 
   const dues = invoices.filter(
@@ -603,6 +618,18 @@ function MemberDrawer({
             <span className="font-medium text-ink-700">{tenantName}</span>
           </p>
           <div className="flex flex-wrap gap-2">
+            {(user?.role === "sadar" ||
+              user?.role === "secretary" ||
+              user?.role === "super_admin") && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="text-amber-700"
+                onClick={() => setResetOpen((v) => !v)}
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Reset payments
+              </Button>
+            )}
             {canRemove && (
               <Button
                 variant="secondary"
@@ -645,6 +672,42 @@ function MemberDrawer({
               <Wallet className="h-3.5 w-3.5" /> Collect
             </Button>
           </div>
+          {resetOpen && (
+            <div className="w-full rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-[12px] font-semibold text-amber-900">
+                Payment reset request
+              </p>
+              <p className="mt-0.5 text-[11.5px] text-amber-800">
+                Is member ke saare payments reject ho jayenge aur invoices dobara
+                unpaid ho jayengi. Ledger me reversal entry jayegi. Reset tabhi hoga
+                jab <b>Khajanchi approve</b> karega.
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Input
+                  value={resetReason}
+                  onChange={(e) => setResetReason(e.target.value)}
+                  placeholder="Wajah (e.g. demo / wrong entry)"
+                  className="min-w-[220px] flex-1"
+                />
+                <Button
+                  size="sm"
+                  loading={resetting}
+                  onClick={async () => {
+                    setResetting(true);
+                    try {
+                      await onRequestReset(member, resetReason);
+                      setResetOpen(false);
+                      setResetReason("");
+                    } finally {
+                      setResetting(false);
+                    }
+                  }}
+                >
+                  Send to Khajanchi
+                </Button>
+              </div>
+            </div>
+          )}
           {confirmRemove && (
             <p className="w-full rounded-lg bg-red-50 px-3 py-2 text-[11.5px] text-red-700">
               Pakka remove karna hai? Jis member ka koi receipt ya paid invoice hai wo

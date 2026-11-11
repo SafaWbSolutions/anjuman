@@ -2240,6 +2240,21 @@ export async function removeMember(
   return String(data) === "ARCHIVED" ? "ARCHIVED" : "DELETED";
 }
 
+/** Sadar asks the Khajanchi to reset one member's payments. */
+export async function requestPaymentReset(
+  memberId: string,
+  reason: string
+): Promise<string> {
+  if (isDemoMode) return `demo-reset-${Date.now()}`;
+
+  const { data, error } = await client().rpc("request_payment_reset", {
+    p_member: memberId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+  return String(data);
+}
+
 export async function createMember(input: NewMember): Promise<Member> {
   if (isDemoMode) {
     return {

@@ -1,5 +1,0 @@
-docs(deploy): document direct-upload deploy and skip CI publish without secrets
-
-Cloudflare's Git builder kept producing an old bundle for this project, so
-production deployments are now direct uploads (`npm run deploy`). The
-GitHub Action skips its publish step until the Cloudflare secrets exist.

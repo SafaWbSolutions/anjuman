@@ -34,49 +34,68 @@ export default function IdCardsPage() {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Load data
   useEffect(() => {
-    let mounted = true;
+    let isMounted = true;
     Promise.all([listMembers(), getCurrentTenant()])
       .then(([m, t]) => {
-        if (mounted) {
+        if (isMounted) {
           setMembers(m);
           setTenant(t);
         }
       })
       .catch((e) => {
-        if (mounted) setError(e instanceof Error ? e.message : "Members load nahi ho sake");
+        if (isMounted) setError(e instanceof Error ? e.message : "Members load nahi ho sake");
       })
       .finally(() => {
-        if (mounted) setLoading(false);
+        if (isMounted) setLoading(false);
       });
     return () => {
-      mounted = false;
+      isMounted = false;
     };
   }, []);
 
-  // Generate QR codes
+  // Generate QR codes - only runs on client side after mount
   useEffect(() => {
-    if (members.length === 0) return;
+    if (!mounted || members.length === 0) return;
     let cancelled = false;
+    setQrLoading(true);
+    setQrError(null);
     (async () => {
-      const next: Record<string, string> = {};
-      const origin = typeof window !== "undefined" ? window.location.origin : "";
-      for (const m of members) {
-        const url = `${origin}/verify/?id=${m.code}`;
-        next[m.id] = await QRCode.toDataURL(url, {
-          margin: 1,
-          width: 240,
-          color: { dark: "#0f172a", light: "#ffffff" },
-        });
+      try {
+        const next: Record<string, string> = {};
+        const origin = window.location.origin;
+        for (const m of members) {
+          if (cancelled) break;
+          const url = `${origin}/verify/?id=${m.code}`;
+          next[m.id] = await QRCode.toDataURL(url, {
+            margin: 1,
+            width: 240,
+            color: { dark: "#0f172a", light: "#ffffff" },
+          });
+        }
+        if (!cancelled) setQr(next);
+      } catch (e) {
+        if (!cancelled) {
+          setQrError("QR code generate nahi hua: " + (e instanceof Error ? e.message : "Unknown error"));
+          console.error("QR generation failed:", e);
+        }
+      } finally {
+        if (!cancelled) setQrLoading(false);
       }
-      if (!cancelled) setQr(next);
     })();
     return () => {
       cancelled = true;
     };
-  }, [members]);
+  }, [members, mounted]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -243,6 +262,17 @@ export default function IdCardsPage() {
               {Math.ceil(chosen.length / Number(layout))} page
               {Math.ceil(chosen.length / Number(layout)) === 1 ? "" : "s"}
             </span>
+            {qrLoading && (
+              <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-brand-600">
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-brand-600 border-t-transparent" />
+                QR generating…
+              </span>
+            )}
+            {qrError && (
+              <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-red-600">
+                ⚠ {qrError}
+              </span>
+            )}
           </div>
 
           <div className="print-area">

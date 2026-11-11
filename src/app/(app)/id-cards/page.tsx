@@ -10,8 +10,8 @@ import {
   Square,
   Users,
 } from "lucide-react";
-import { activeTenant, members } from "@/lib/mock";
-import type { Member } from "@/lib/types";
+import type { Member, Tenant } from "@/lib/types";
+import { listMembers, getCurrentTenant } from "@/lib/repo";
 import { cn } from "@/lib/utils";
 import {
   Avatar,
@@ -27,11 +27,56 @@ import {
 export default function IdCardsPage() {
   const [q, setQ] = useState("");
   const [mohalla, setMohalla] = useState("all");
-  const [selected, setSelected] = useState<Set<string>>(
-    new Set(members.slice(0, 8).map((m) => m.id))
-  );
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [qr, setQr] = useState<Record<string, string>>({});
   const [layout, setLayout] = useState<"8" | "6">("8");
+  const [members, setMembers] = useState<Member[]>([]);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load data
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([listMembers(), getCurrentTenant()])
+      .then(([m, t]) => {
+        if (mounted) {
+          setMembers(m);
+          setTenant(t);
+        }
+      })
+      .catch((e) => {
+        if (mounted) setError(e instanceof Error ? e.message : "Members load nahi ho sake");
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Generate QR codes
+  useEffect(() => {
+    if (members.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const next: Record<string, string> = {};
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      for (const m of members) {
+        const url = `${origin}/verify/?id=${m.code}`;
+        next[m.id] = await QRCode.toDataURL(url, {
+          margin: 1,
+          width: 240,
+          color: { dark: "#0f172a", light: "#ffffff" },
+        });
+      }
+      if (!cancelled) setQr(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [members]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -44,28 +89,9 @@ export default function IdCardsPage() {
         m.phone.includes(term)
       );
     });
-  }, [q, mohalla]);
+  }, [q, mohalla, members]);
 
   const chosen = members.filter((m) => selected.has(m.id));
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const next: Record<string, string> = {};
-      for (const m of members) {
-        const url = `${window.location.origin}/verify/?id=${m.code}`;
-        next[m.id] = await QRCode.toDataURL(url, {
-          margin: 1,
-          width: 240,
-          color: { dark: "#0f172a", light: "#ffffff" },
-        });
-      }
-      if (!cancelled) setQr(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -75,6 +101,30 @@ export default function IdCardsPage() {
       return next;
     });
   }
+
+  if (loading) {
+    return (
+      <>
+        <PageHeader eyebrow="Community" title="ID cards" description="Loading…" />
+        <Card className="flex items-center justify-center gap-2 p-10 text-[13px] text-ink-500">
+          ID cards taiyaar ho rahe hain…
+        </Card>
+      </>
+    );
+  }
+
+  if (error) {
+    return (
+      <>
+        <PageHeader eyebrow="Community" title="ID cards" />
+        <Card className="p-8 text-center border-red-200 bg-red-50">
+          <p className="text-red-700">{error}</p>
+        </Card>
+      </>
+    );
+  }
+
+  const mohallas = useMemo(() => Array.from(new Set(members.map((m) => m.mohalla))).sort(), [members]);
 
   return (
     <>
@@ -118,7 +168,7 @@ export default function IdCardsPage() {
                 className="py-2 text-[12.5px]"
               >
                 <option value="all">All mohallas</option>
-                {Array.from(new Set(members.map((m) => m.mohalla))).map((m) => (
+                {mohallas.map((m) => (
                   <option key={m} value={m}>
                     {m}
                   </option>
@@ -206,7 +256,7 @@ export default function IdCardsPage() {
               }}
             >
               {(chosen.length ? chosen : members.slice(0, 8)).map((m) => (
-                <MemberCard key={m.id} member={m} qr={qr[m.id]} />
+                <MemberCard key={m.id} member={m} qr={qr[m.id]} tenant={tenant} />
               ))}
             </div>
           </div>
@@ -223,7 +273,15 @@ export default function IdCardsPage() {
   );
 }
 
-function MemberCard({ member, qr }: { member: Member; qr?: string }) {
+function MemberCard({
+  member,
+  qr,
+  tenant,
+}: {
+  member: Member;
+  qr?: string;
+  tenant: Tenant | null;
+}) {
   return (
     <div className="id-card flex flex-col text-ink-900">
       {/* header */}
@@ -233,11 +291,10 @@ function MemberCard({ member, qr }: { member: Member; qr?: string }) {
         </span>
         <div className="min-w-0 leading-tight">
           <p className="truncate text-[9px] font-semibold tracking-wide">
-            {activeTenant.name.toUpperCase()}
+            {tenant?.name.toUpperCase() ?? "ANJUMAN"}
           </p>
           <p className="truncate text-[7px] text-ink-300">
-            {activeTenant.village} · {activeTenant.district} · Reg{" "}
-            {activeTenant.regNo}
+            {tenant?.village} · {tenant?.district} · Reg {tenant?.regNo}
           </p>
         </div>
         <span className="ml-auto rounded bg-white/10 px-1.5 py-0.5 text-[6.5px] font-semibold uppercase tracking-wider">

@@ -178,7 +178,7 @@ function OfficeDashboard() {
     }
     return [...totals.entries()]
       .map(([memberId, due]) => ({ member: memberMap.get(memberId), due }))
-      .filter((x): x is { member: Member; due: number } => Boolean(x.member) && x.due > 0 && x.member.status === "active")
+      .filter((x): x is { member: Member; due: number } => Boolean(x.member) && x.due > 0 && x.member?.status === "active")
       .sort((a, b) => b.due - a.due)
       .slice(0, 5);
   }, [invoices, memberMap]);

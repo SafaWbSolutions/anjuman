@@ -53,10 +53,12 @@ const ROLE_CARDS: {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user, ready, demoMode, signIn } = useAuth();
+  const { user, ready, demoMode, signIn, mfaPending, verifyMfa, cancelMfa } = useAuth();
   const [busy, setBusy] = useState<Role | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
     if (ready && user) router.replace("/dashboard/");
@@ -65,8 +67,8 @@ export default function LoginPage() {
   async function pick(role: Role) {
     setBusy(role);
     try {
-      await signIn(role);
-      router.replace("/dashboard/");
+      const result = await signIn(role);
+      if (!result.mfaRequired) router.replace("/dashboard/");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Sign in failed", "error");
       setBusy(null);
@@ -77,11 +79,29 @@ export default function LoginPage() {
     e.preventDefault();
     setBusy("member");
     try {
-      await signIn("member", email, password);
-      router.replace("/dashboard/");
+      const result = await signIn("member", email, password);
+      if (!result.mfaRequired) router.replace("/dashboard/");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Sign in failed", "error");
       setBusy(null);
+    }
+  }
+
+  async function submitCode(e: React.FormEvent) {
+    e.preventDefault();
+    if (code.trim().length !== 6) {
+      toast("6-digit code daalo", "error");
+      return;
+    }
+    setVerifying(true);
+    try {
+      await verifyMfa(code);
+      router.replace("/dashboard/");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Code galat hai", "error");
+      setCode("");
+    } finally {
+      setVerifying(false);
     }
   }
 
@@ -222,6 +242,40 @@ export default function LoginPage() {
                 Nothing you enter is saved to a server.
               </p>
             </>
+          ) : mfaPending ? (
+            <form onSubmit={submitCode} className="mt-6 space-y-4">
+              <div className="flex items-start gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-3.5">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-brand-600" />
+                <p className="text-[12.5px] leading-relaxed text-brand-900">
+                  <span className="font-semibold">2-step verification</span>
+                  <br />
+                  Authenticator app (Google Authenticator / Authy) me dikh raha 6-digit
+                  code daalo. Ye step {ROLE_LABEL[mfaPending.role]} ke liye zaroori hai.
+                </p>
+              </div>
+              <div>
+                <label className="label">6-digit code</label>
+                <Input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="123456"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  className="text-center font-mono text-xl tracking-[0.4em]"
+                  autoFocus
+                />
+              </div>
+              <Button type="submit" size="lg" className="w-full" loading={verifying}>
+                Verify &amp; continue
+              </Button>
+              <button
+                type="button"
+                onClick={() => void cancelMfa()}
+                className="w-full text-center text-[12.5px] text-ink-500 hover:text-ink-700"
+              >
+                Cancel — use another account
+              </button>
+            </form>
           ) : (
             <form onSubmit={submit} className="mt-6 space-y-4">
               <div>

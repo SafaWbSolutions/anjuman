@@ -49,6 +49,95 @@ export default function MyProfilePage() {
   const [confirm, setConfirm] = useState("");
   const [changing, setChanging] = useState(false);
 
+  const [factorId, setFactorId] = useState<string | null>(null);
+  const [enrolling, setEnrolling] = useState<{ id: string; qr: string; secret: string } | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaBusy, setMfaBusy] = useState(false);
+  const [mfaLoaded, setMfaLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!supabase || isDemoMode) return;
+    let alive = true;
+    supabase.auth.mfa
+      .listFactors()
+      .then(({ data }) => {
+        if (!alive) return;
+        const factor = data?.totp?.find((f) => f.status === "verified");
+        setFactorId(factor?.id ?? null);
+        setMfaLoaded(true);
+      })
+      .catch(() => setMfaLoaded(true));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function startEnroll() {
+    if (!supabase) return;
+    setMfaBusy(true);
+    try {
+      const { data, error } = await supabase.auth.mfa.enroll({
+        factorType: "totp",
+        friendlyName: `Anjuman ${user?.email ?? ""}`,
+      });
+      if (error) throw error;
+      setEnrolling({ id: data.id, qr: data.totp.qr_code, secret: data.totp.secret });
+      setMfaCode("");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "2FA setup shuru nahi hua", "error");
+    } finally {
+      setMfaBusy(false);
+    }
+  }
+
+  async function confirmEnroll() {
+    if (!supabase || !enrolling) return;
+    if (mfaCode.trim().length !== 6) return toast("6-digit code daalo", "error");
+    setMfaBusy(true);
+    try {
+      const challenge = await supabase.auth.mfa.challenge({ factorId: enrolling.id });
+      if (challenge.error) throw challenge.error;
+      const verified = await supabase.auth.mfa.verify({
+        factorId: enrolling.id,
+        challengeId: challenge.data.id,
+        code: mfaCode.trim(),
+      });
+      if (verified.error) throw verified.error;
+      setFactorId(enrolling.id);
+      setEnrolling(null);
+      setMfaCode("");
+      toast("2FA chalu ho gaya — agle login par code maangega");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Code galat hai", "error");
+    } finally {
+      setMfaBusy(false);
+    }
+  }
+
+  async function cancelEnroll() {
+    if (supabase && enrolling) {
+      await supabase.auth.mfa.unenroll({ factorId: enrolling.id }).catch(() => {});
+    }
+    setEnrolling(null);
+    setMfaCode("");
+  }
+
+  async function disableMfa() {
+    if (!supabase || !factorId) return;
+    if (!window.confirm("2FA band karein? Payment verify karne ke liye phir zaroori hoga.")) return;
+    setMfaBusy(true);
+    try {
+      const { error } = await supabase.auth.mfa.unenroll({ factorId });
+      if (error) throw error;
+      setFactorId(null);
+      toast("2FA band ho gaya");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "2FA band nahi hua", "error");
+    } finally {
+      setMfaBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (!user) return;
     setName(user.name);
@@ -258,6 +347,102 @@ export default function MyProfilePage() {
             )}
           </div>
         </Card>
+
+        {!isDemoMode && (
+          <Card className="lg:col-span-3">
+            <CardHeader
+              title="Two-factor authentication (2FA)"
+              subtitle="Payment verify / approve karne ke liye mandatory — Google Authenticator ya Authy use karo"
+              action={
+                factorId ? (
+                  <Badge tone="green">2FA ON</Badge>
+                ) : (
+                  <Badge tone="amber">2FA OFF</Badge>
+                )
+              }
+            />
+            <div className="grid gap-4 p-5 sm:grid-cols-2">
+              {factorId ? (
+                <>
+                  <div className="flex items-start gap-3 sm:col-span-2">
+                    <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                    <p className="text-[12.5px] leading-relaxed text-ink-600">
+                      Aapka account authenticator app se protected hai. Har login par
+                      6-digit code maanga jayega, aur bina code ke koi payment verify
+                      ya expense approve nahi ho sakta.
+                    </p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => void disableMfa()}
+                      loading={mfaBusy}
+                    >
+                      Turn off 2FA
+                    </Button>
+                  </div>
+                </>
+              ) : enrolling ? (
+                <>
+                  <div className="flex flex-col items-center gap-3 sm:col-span-2">
+                    <img
+                      src={enrolling.qr}
+                      alt="2FA QR code"
+                      className="h-44 w-44 rounded-xl border border-ink-200 bg-white p-2"
+                    />
+                    <p className="text-center text-[12px] text-ink-500">
+                      Google Authenticator / Authy me ye QR scan karo.
+                      <br />
+                      Ya manual code daalo:{" "}
+                      <span className="select-all font-mono text-[11.5px] text-ink-800">
+                        {enrolling.secret}
+                      </span>
+                    </p>
+                  </div>
+                  <Field label="6-digit code" className="sm:col-span-2" hint="App me dikh raha current code">
+                    <Input
+                      value={mfaCode}
+                      onChange={(e) =>
+                        setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                      }
+                      inputMode="numeric"
+                      placeholder="123456"
+                      className="text-center font-mono text-xl tracking-[0.4em]"
+                    />
+                  </Field>
+                  <div className="flex gap-2 sm:col-span-2">
+                    <Button onClick={() => void confirmEnroll()} loading={mfaBusy}>
+                      <ShieldCheck className="h-4 w-4" /> Verify &amp; enable
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => void cancelEnroll()}
+                      disabled={mfaBusy}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-start gap-3 sm:col-span-2">
+                    <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                    <p className="text-[12.5px] leading-relaxed text-ink-600">
+                      <b>2FA abhi off hai.</b> Sirf password se account access ho sakta
+                      hai — isliye payment verify, expense approve aur approval decide
+                      block rehte hain. Abhi enable karo (2 minute).
+                    </p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Button onClick={() => void startEnroll()} loading={mfaBusy || !mfaLoaded}>
+                      <KeyRound className="h-4 w-4" /> Enable 2FA
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </Card>
+        )}
 
         {!isDemoMode && (
           <Card className="lg:col-span-3">

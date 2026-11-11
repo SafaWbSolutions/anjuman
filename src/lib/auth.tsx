@@ -9,7 +9,7 @@ import React, {
   useState,
 } from "react";
 import type { Role, SessionUser } from "./types";
-import { ROLE_LABEL } from "./types";
+import { MFA_ROLES, ROLE_LABEL } from "./types";
 import { activeTenant } from "./mock";
 import { isDemoMode, supabase } from "./supabase";
 import { loadSessionUser } from "./session";
@@ -87,7 +87,10 @@ interface AuthState {
   user: SessionUser | null;
   ready: boolean;
   demoMode: boolean;
-  signIn: (role: Role, email?: string, password?: string) => Promise<void>;
+  signIn: (role: Role, email?: string, password?: string) => Promise<{ mfaRequired: boolean }>;
+  verifyMfa: (code: string) => Promise<void>;
+  cancelMfa: () => Promise<void>;
+  mfaPending: { role: Role; factorId: string } | null;
   signOut: () => Promise<void>;
   switchRole: (role: Role) => void;
   refreshUser: () => Promise<void>;
@@ -101,7 +104,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [mfaPending, setMfaPending] = useState<{ role: Role; factorId: string } | null>(null);
   const demoMode = isDemoMode;
+
+  /** Returns the pending 2FA challenge when this role still owes a TOTP step. */
+  const checkMfa = useCallback(async (role: Role) => {
+    if (!supabase || !MFA_ROLES.includes(role)) return null;
+    try {
+      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (!aal || aal.currentLevel === "aal2") return null;
+      const { data: factors } = await supabase.auth.mfa.listFactors();
+      const factor = factors?.totp?.find((f) => f.status === "verified");
+      return factor ? { role, factorId: factor.id } : null;
+    } catch {
+      return null;
+    }
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -138,8 +156,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (data.session?.user) {
           const sessionUser = await loadSessionUser(data.session.user.id);
           if (sessionUser && !cancelled) {
-            sessionUser.email = data.session.user.email ?? "";
-            setUser(sessionUser);
+            sessionUser.email = data.session.user.email ?? sessionUser.email;
+            const pending = await checkMfa(sessionUser.role);
+            if (pending) {
+              setMfaPending(pending);
+            } else {
+              setUser(sessionUser);
+            }
           }
         }
       } catch {
@@ -174,7 +197,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (demoMode) {
         const base = DEMO_USERS[role];
         persist(email ? { ...base, email } : base);
-        return;
+        return { mfaRequired: false };
       }
       if (!supabase) throw new Error("Supabase is not configured");
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -191,14 +214,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await supabase.auth.signOut();
         throw new Error("Is account ka koi profile nahi mila. Sadar se sampark karein.");
       }
-      sessionUser.email = data.user.email ?? "";
+      sessionUser.email = data.user.email ?? sessionUser.email;
+
+      const pending = await checkMfa(sessionUser.role);
+      if (pending) {
+        setMfaPending(pending);
+        return { mfaRequired: true };
+      }
+
       setUser(sessionUser);
+      return { mfaRequired: false };
     },
-    [demoMode]
+    [demoMode, checkMfa]
   );
+
+  const verifyMfa = useCallback(async (code: string) => {
+    if (!supabase || !mfaPending) throw new Error("2FA session nahi mila — dobara login karein");
+    const challenge = await supabase.auth.mfa.challenge({ factorId: mfaPending.factorId });
+    if (challenge.error) throw challenge.error;
+    const verified = await supabase.auth.mfa.verify({
+      factorId: mfaPending.factorId,
+      challengeId: challenge.data.id,
+      code: code.trim(),
+    });
+    if (verified.error) throw verified.error;
+
+    const { data } = await supabase.auth.getSession();
+    if (!data.session?.user) throw new Error("Session expire ho gaya — dobara login karein");
+    const sessionUser = await loadSessionUser(data.session.user.id);
+    if (!sessionUser) throw new Error("Profile nahi mila");
+    sessionUser.email = data.session.user.email ?? sessionUser.email;
+    setUser(sessionUser);
+    setMfaPending(null);
+  }, [mfaPending]);
+
+  const cancelMfa = useCallback(async () => {
+    if (supabase && !demoMode) await supabase.auth.signOut();
+    setMfaPending(null);
+  }, [demoMode]);
 
   const signOut = useCallback(async () => {
     if (supabase && !demoMode) await supabase.auth.signOut();
+    setMfaPending(null);
     persist(null);
   }, [demoMode, persist]);
 
@@ -231,8 +288,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, ready, demoMode, signIn, signOut, switchRole, refreshUser, updateLocalUser, can }),
-    [user, ready, demoMode, signIn, signOut, switchRole, refreshUser, updateLocalUser, can]
+    () => ({
+      user,
+      ready,
+      demoMode,
+      signIn,
+      verifyMfa,
+      cancelMfa,
+      mfaPending,
+      signOut,
+      switchRole,
+      refreshUser,
+      updateLocalUser,
+      can,
+    }),
+    [
+      user,
+      ready,
+      demoMode,
+      signIn,
+      verifyMfa,
+      cancelMfa,
+      mfaPending,
+      signOut,
+      switchRole,
+      refreshUser,
+      updateLocalUser,
+      can,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

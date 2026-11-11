@@ -7,6 +7,16 @@ export type Role =
   | "collector"
   | "member";
 
+/** Roles that must pass 2FA before any money decision. */
+export const MFA_ROLES: Role[] = [
+  "super_admin",
+  "sadar",
+  "khajanchi",
+  "secretary",
+  "auditor",
+  "collector",
+];
+
 export const ROLE_LABEL: Record<Role, string> = {
   super_admin: "Platform Admin",
   sadar: "Sadar (President)",

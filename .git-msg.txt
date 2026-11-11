@@ -1,5 +1,6 @@
-fix(id-cards): move all hooks above early returns (React error #310)
+fix(auth): restore demo session after full page reload
 
-`mohallas` useMemo was declared after the loading/error early returns, so the
-hook count changed between renders. Static export page crashed with
-"Rendered more hooks than during the previous render" on every panel.
+The restore effect depended only on demoMode, so it ran once before
+`mounted` was true, skipped localStorage and marked the app ready with a
+null user. Every hard refresh on a static export redirected to /login/.
+The effect now waits for mount and re-runs when `mounted` flips.

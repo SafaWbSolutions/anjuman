@@ -105,11 +105,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Wait until after the first client render so server HTML and the first
+    // client render match exactly (no hydration mismatch on static export).
+    if (!mounted) return;
     let cancelled = false;
 
     async function restore() {
-      // Demo: restore the picked role from localStorage (only on client).
-      if (demoMode && mounted) {
+      // Demo: restore the picked role from localStorage.
+      if (demoMode) {
         try {
           const raw = window.localStorage.getItem(STORAGE_KEY);
           if (raw) setUser(JSON.parse(raw) as SessionUser);
@@ -153,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       subscription?.data.subscription.unsubscribe();
     };
-  }, [demoMode]);
+  }, [demoMode, mounted]);
 
   const persist = useCallback((u: SessionUser | null) => {
     setUser(u);

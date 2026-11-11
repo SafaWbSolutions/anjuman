@@ -81,6 +81,20 @@ export default function LoginPage() {
     return fallback;
   }
 
+  // An existing session can be rejected on restore (suspended anjuman,
+  // deactivated account, expired token). Show that reason here.
+  useEffect(() => {
+    try {
+      const flash = window.sessionStorage.getItem("anjuman.auth.error");
+      if (flash) {
+        setError(flash);
+        window.sessionStorage.removeItem("anjuman.auth.error");
+      }
+    } catch {
+      /* private mode */
+    }
+  }, []);
+
   useEffect(() => {
     if (ready && user) router.replace("/dashboard/");
   }, [ready, user, router]);

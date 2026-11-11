@@ -184,8 +184,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           }
         }
-      } catch {
-        /* expired or revoked token — stay signed out */
+      } catch (e) {
+        // Expired token, deactivated profile or a suspended tenant:
+        // clear the Supabase session and tell the login page why.
+        const msg = e instanceof Error ? e.message : "";
+        if (msg) {
+          try {
+            window.sessionStorage.setItem("anjuman.auth.error", msg);
+          } catch {
+            /* private mode */
+          }
+        }
+        try {
+          await supabase?.auth.signOut();
+        } catch {
+          /* already gone */
+        }
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -228,7 +242,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Email confirm nahi hua. Apna inbox check karein, phir login karein.");
       }
 
-      const sessionUser = await loadSessionUser(data.user.id);
+      const sessionUser = await loadSessionUser(data.user.id).catch(
+        async (e: unknown) => {
+          await supabase?.auth.signOut();
+          throw e;
+        }
+      );
       if (!sessionUser) {
         await supabase.auth.signOut();
         throw new Error("Is account ka koi profile nahi mila. Sadar se sampark karein.");
@@ -285,7 +304,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const { data } = await supabase.auth.getSession();
       if (!data.session?.user) throw new Error("Session expire ho gaya — dobara login karein");
-      const sessionUser = await loadSessionUser(data.session.user.id);
+      const sessionUser = await loadSessionUser(data.session.user.id).catch(
+        async (e: unknown) => {
+          await supabase?.auth.signOut();
+          throw e;
+        }
+      );
       if (!sessionUser) throw new Error("Profile nahi mila");
       sessionUser.email = data.session.user.email ?? sessionUser.email;
       try {
@@ -372,7 +396,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data } = await supabase.auth.getSession();
     if (!data.session?.user) throw new Error("Session expire ho gaya — dobara login karein");
-    const sessionUser = await loadSessionUser(data.session.user.id);
+    const sessionUser = await loadSessionUser(data.session.user.id).catch(
+      async (e: unknown) => {
+        await supabase?.auth.signOut();
+        throw e;
+      }
+    );
     if (!sessionUser) throw new Error("Profile nahi mila");
     sessionUser.email = data.session.user.email ?? sessionUser.email;
     try {
@@ -414,11 +443,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data } = await supabase.auth.getSession();
     const session = data.session;
     if (!session) return;
-    const fresh = await loadSessionUser(session.user.id);
-    if (!fresh) return;
-    fresh.email = session.user.email ?? fresh.email;
-    setUser(fresh);
-  }, [demoMode]);
+    try {
+      const fresh = await loadSessionUser(session.user.id);
+      if (!fresh) return;
+      fresh.email = session.user.email ?? fresh.email;
+      setUser(fresh);
+    } catch (e) {
+      // Suspended tenant / deactivated account: do not keep a stale session.
+      await signOut();
+      if (e instanceof Error) {
+        try {
+          window.sessionStorage.setItem("anjuman.auth.error", e.message);
+        } catch {
+          /* private mode */
+        }
+      }
+    }
+  }, [demoMode, signOut]);
 
   const updateLocalUser = useCallback((patch: Partial<SessionUser>) => {
     setUser((current) => (current ? { ...current, ...patch } : current));

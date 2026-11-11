@@ -23,12 +23,35 @@ export async function loadSessionUser(userId: string): Promise<SessionUser | nul
 
   let tenantName = "";
   if (profile.tenant_id) {
+    // my_tenant_status() bypasses RLS so it keeps working when
+    // current_tenant_id() is NULL for a suspended tenant.
+    let tenantStatus: string | null = null;
+    const { data: statusData } = await supabase.rpc("my_tenant_status");
+    if (typeof statusData === "string") tenantStatus = statusData;
+
     const { data: tenant } = await supabase
       .from("tenants")
-      .select("name")
+      .select("name, status")
       .eq("id", profile.tenant_id)
       .maybeSingle();
     tenantName = tenant?.name ?? "";
+    if (tenantStatus === null && typeof tenant?.status === "string") {
+      tenantStatus = tenant.status;
+    }
+
+    // A suspended / expired anjuman must not let ANY of its users in -
+    // sadar, khajanchi, collector and members alike. Nothing is deleted:
+    // reactivating the tenant restores every login and all data as-is.
+    if (tenantStatus === "suspended") {
+      throw new Error(
+        "Ye anjuman suspend hai. Platform admin ke reactivate karne tak koi bhi login nahi kar sakta. Aapka poora data surakshit hai."
+      );
+    }
+    if (tenantStatus === "read_only") {
+      throw new Error(
+        "Is anjuman ka plan expire ho gaya hai. Platform admin se renew / reactivate karwao. Aapka poora data surakshit hai."
+      );
+    }
   }
 
   return {

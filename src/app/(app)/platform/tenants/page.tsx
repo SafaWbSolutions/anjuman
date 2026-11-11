@@ -9,6 +9,7 @@ import {
   Eye,
   Gauge,
   Plus,
+  RefreshCw,
   Search,
   Settings2,
   ShieldAlert,
@@ -264,7 +265,16 @@ export default function TenantsPage() {
         </div>
       </Card>
 
-      <TenantDrawer tenant={selected} onClose={() => setSelected(null)} />
+      <TenantDrawer
+        tenant={selected}
+        onClose={() => {
+          setSelected(null);
+          // Status may have changed (suspend / reactivate) - refresh rows.
+          listTenants()
+            .then(setTenants)
+            .catch(() => {});
+        }}
+      />
       <NewTenantDrawer open={newOpen} onClose={() => setNewOpen(false)} />
     </>
   );
@@ -312,10 +322,34 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
     setSaving(true);
     try {
       await saveTenantProfileForTenant(tenant.id, { status: "suspended" });
-      toast("Anjuman suspended");
+      toast("Anjuman suspended — all its logins are blocked. No data was deleted.");
       onClose();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Suspend failed", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /**
+   * Reactivating only flips tenants.status back to active. Members,
+   * invoices, payments, ledger, funds, staff logins - everything is
+   * exactly where it was, so every panel starts working again.
+   */
+  async function handleReactivate() {
+    if (!tenant) return;
+    setSaving(true);
+    try {
+      await saveTenantProfileForTenant(tenant.id, {
+        status: "active",
+        planType,
+        planAmountPaise: planType === "free" ? 0 : Math.round(Number(amount) * 100),
+        expiresAt: tenant.expiresAt,
+      });
+      toast("Anjuman reactivated — all logins restored, data intact");
+      onClose();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Reactivate failed", "error");
     } finally {
       setSaving(false);
     }
@@ -330,14 +364,21 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
       width="max-w-2xl"
       footer={
         <div className="flex flex-wrap justify-between gap-2">
-          <Button
-            variant="danger"
-            size="sm"
-            disabled={tenant.status === "suspended"}
-            onClick={handleSuspend}
-          >
-            <Ban className="h-3.5 w-3.5" /> {tenant.status === "suspended" ? "Already suspended" : "Suspend"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {tenant.status === "suspended" || tenant.status === "read_only" ? (
+              <Button size="sm" onClick={handleReactivate} loading={saving}>
+                <RefreshCw className="h-3.5 w-3.5" /> Reactivate
+              </Button>
+            ) : null}
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={tenant.status === "suspended"}
+              onClick={handleSuspend}
+            >
+              <Ban className="h-3.5 w-3.5" /> {tenant.status === "suspended" ? "Already suspended" : "Suspend"}
+            </Button>
+          </div>
           <div className="flex gap-2">
             <Button
               variant="secondary"

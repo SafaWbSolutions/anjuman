@@ -62,15 +62,34 @@ jobs:
           echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
           /usr/lib/postgresql/17/bin/pg_dump --version
 
-      - name: Dump database
+      - name: Resolve IPv4 pooler connection
         if: steps.check.outputs.ready == 'true'
         env:
-          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          RAW_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          URL="$RAW_DB_URL"
+          # Supabase free projects only publish an IPv6 address for the
+          # direct database host, and GitHub runners have no IPv6 route.
+          # The session pooler has IPv4 and supports pg_dump.
+          if [[ "$URL" =~ ^postgresql://postgres:(.*)@db\.([a-z0-9]+)\.supabase\.co:5432/postgres$ ]]; then
+            PASS="${BASH_REMATCH[1]}"
+            REF="${BASH_REMATCH[2]}"
+            if [[ "$PASS" != *"%"* ]]; then
+              PASS=$(printf '%s' "$PASS" | sed -e 's/%/%25/g' -e 's/@/%40/g' -e 's/:/%3A/g' -e 's/#/%23/g' -e 's|/|%2F|g')
+            fi
+            URL="postgresql://postgres.${REF}:${PASS}@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require"
+          fi
+          echo "DB_URL_DUMP=$URL" >> "$GITHUB_ENV"
+          echo "Using host: $(printf '%s' "$URL" | sed -E 's#.*@([^/?]+).*#\1#')"
+
+      - name: Dump database
+        if: steps.check.outputs.ready == 'true'
         run: |
           set -uo pipefail
           STAMP=$(date -u +%Y/%m/%d)
           FILE="anjuman-$(date -u +%Y%m%d-%H%M).sql.gz"
-          if ! pg_dump "$DB_URL" --no-owner --no-privileges --clean --if-exists > dump.sql 2> dump.err; then
+          if ! pg_dump "$DB_URL_DUMP" --no-owner --no-privileges --clean --if-exists > dump.sql 2> dump.err; then
             ERR=$(tr '\n' ' ' < dump.err | tail -c 600)
             echo "::error::pg_dump failed: $ERR"
             exit 1

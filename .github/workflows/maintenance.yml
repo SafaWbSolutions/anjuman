@@ -7,12 +7,19 @@ name: Daily maintenance (SQL)
 # Needs one secret:
 #   SUPABASE_DB_URL = postgresql://postgres:<password>@db.oytcwpemrrnqrbrtonyu.supabase.co:5432/postgres
 #
-# Until it exists this workflow skips itself instead of failing.
+# Supabase free projects expose only IPv6 on the direct host and GitHub
+# runners are IPv4-only, so the workflow rewrites the URL to the IPv4
+# session pooler before connecting.
+#
+# Until the secret exists this workflow skips itself instead of failing.
 
 on:
   schedule:
     - cron: "45 19 * * *" # 01:15 IST, before the nightly backup
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/maintenance.yml"
 
 permissions:
   contents: read
@@ -33,18 +40,40 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Install PostgreSQL client
+      - name: Install PostgreSQL 17 client
         if: steps.check.outputs.ready == 'true'
         run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
           sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client
+          sudo apt-get install -y -qq postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve IPv4 pooler connection
+        if: steps.check.outputs.ready == 'true'
+        env:
+          RAW_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          URL="$RAW_DB_URL"
+          if [[ "$URL" =~ ^postgresql://postgres:(.*)@db\.([a-z0-9]+)\.supabase\.co:5432/postgres$ ]]; then
+            PASS="${BASH_REMATCH[1]}"
+            REF="${BASH_REMATCH[2]}"
+            if [[ "$PASS" != *"%"* ]]; then
+              PASS=$(printf '%s' "$PASS" | sed -e 's/%/%25/g' -e 's/@/%40/g' -e 's/:/%3A/g' -e 's/#/%23/g' -e 's|/|%2F|g')
+            fi
+            URL="postgresql://postgres.${REF}:${PASS}@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require"
+          fi
+          echo "DB_URL_RUN=$URL" >> "$GITHUB_ENV"
+          echo "Using host: $(printf '%s' "$URL" | sed -E 's#.*@([^/?]+).*#\1#')"
 
       - name: Run keepalive + daily maintenance
         if: steps.check.outputs.ready == 'true'
-        env:
-          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          psql "$DB_URL" -v ON_ERROR_STOP=1 \
+          psql "$DB_URL_RUN" -v ON_ERROR_STOP=1 \
             -c "select public.keepalive();" \
             -c "select public.run_daily_maintenance();"
 

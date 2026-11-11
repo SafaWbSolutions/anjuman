@@ -1,0 +1,7 @@
+fix(auth): resolve hydration mismatch for static export
+
+- Added `mounted` state to AuthProvider
+- `window.localStorage` access only after client mount
+- `persist` callback guarded by `mounted` check
+- Removes React error #310 across all pages
+- Typecheck, build all pass

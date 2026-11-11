@@ -97,14 +97,19 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const demoMode = isDemoMode;
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
     async function restore() {
-      // Demo: restore the picked role from localStorage.
-      if (demoMode) {
+      // Demo: restore the picked role from localStorage (only on client).
+      if (demoMode && mounted) {
         try {
           const raw = window.localStorage.getItem(STORAGE_KEY);
           if (raw) setUser(JSON.parse(raw) as SessionUser);
@@ -152,9 +157,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const persist = useCallback((u: SessionUser | null) => {
     setUser(u);
-    if (u) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(u));
-    else window.localStorage.removeItem(STORAGE_KEY);
-  }, []);
+    if (mounted) {
+      if (u) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(u));
+      else window.localStorage.removeItem(STORAGE_KEY);
+    }
+  }, [mounted]);
 
   const signIn = useCallback(
     async (role: Role, email?: string, password?: string) => {

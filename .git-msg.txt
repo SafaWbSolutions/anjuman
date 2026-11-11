@@ -1,6 +1,6 @@
-fix(auth): restore demo session after full page reload
+fix(demo): return the demo tenant from getCurrentTenant
 
-The restore effect depended only on demoMode, so it ran once before
-`mounted` was true, skipped localStorage and marked the app ready with a
-null user. Every hard refresh on a static export redirected to /login/.
-The effect now waits for mount and re-runs when `mounted` flips.
+ID cards (and any page needing tenant branding) rendered a permanent
+"Loading…" state in demo mode because getCurrentTenant returned null.
+Also render the card sheet without waiting for the tenant, add a
+one-command deploy script for Cloudflare Pages direct upload.

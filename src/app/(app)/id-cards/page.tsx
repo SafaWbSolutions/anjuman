@@ -279,7 +279,7 @@ export default function IdCardsPage() {
             )}
           </div>
 
-          {mounted && tenant && members.length > 0 ? (
+          {mounted && members.length > 0 ? (
             <div className="print-area">
               <div
                 className={cn(

@@ -13,6 +13,7 @@
 
 import { isDemoMode, supabase } from "./supabase";
 import {
+  activeTenant,
   approvals as mockApprovals,
   complaints as mockComplaints,
   expenses as mockExpenses,
@@ -535,7 +536,7 @@ export async function listMembers(): Promise<Member[]> {
 
 /** The signed-in user's tenant row (name, address, UPI id, plan). */
 export async function getCurrentTenant(): Promise<Tenant | null> {
-  if (isDemoMode) return null;
+  if (isDemoMode) return activeTenant;
 
   const { data, error } = await client()
     .from("tenants")

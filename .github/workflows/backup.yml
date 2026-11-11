@@ -3,22 +3,48 @@ name: Nightly backup
 # Dumps the Postgres database and uploads it to Cloudflare R2.
 # Free-tier friendly: a compressed dump of a village-sized anjuman is
 # a few hundred kilobytes.
+#
+# Two safety layers:
+#   1. R2 upload (needs the R2_* secrets below)
+#   2. GitHub artifact copy (90 days) — works even before R2 is set up
+#
+# Required secret:
+#   SUPABASE_DB_URL = postgresql://postgres:<password>@db.<ref>.supabase.co:5432/postgres
+# Optional R2 secrets:
+#   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET
 
 on:
   schedule:
     - cron: "0 21 * * *" # 02:30 IST
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
+      - name: Check for database URL secret
+        id: check
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "::warning::SUPABASE_DB_URL secret is not set — skipping backup. Add it in repo Settings → Secrets and variables → Actions."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install postgres client
+        if: steps.check.outputs.ready == 'true'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client
 
       - name: Dump database
+        if: steps.check.outputs.ready == 'true'
         env:
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
@@ -30,6 +56,7 @@ jobs:
           ls -lh "$FILE"
 
       - name: Upload to R2
+        if: steps.check.outputs.ready == 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -37,8 +64,20 @@ jobs:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
+          if [ -z "$R2_BUCKET" ]; then
+            echo "R2 is not configured — skipping upload, the GitHub artifact copy below is enough."
+            exit 0
+          fi
           aws s3 cp "$FILE" "s3://$R2_BUCKET/$PREFIX/$FILE" --endpoint-url "$R2_ENDPOINT"
+
+      - name: Keep a GitHub copy (90 days)
+        if: steps.check.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: anjuman-backup-${{ github.run_id }}
+          path: "*.sql.gz"
+          retention-days: 90
 
       - name: Keep the run in the summary
         if: always()
-        run: echo "Backup ${{ env.FILE }} → r2://${{ secrets.R2_BUCKET }}/${{ env.PREFIX }}/" >> "$GITHUB_STEP_SUMMARY"
+        run: echo "Backup ${{ env.FILE }} → r2://${{ secrets.R2_BUCKET }}/${{ env.PREFIX }}/ (plus GitHub artifact)" >> "$GITHUB_STEP_SUMMARY"

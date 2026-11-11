@@ -9,12 +9,13 @@ concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  deployments: write
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      deployments: write
 
     steps:
       - uses: actions/checkout@v4
@@ -36,15 +37,31 @@ jobs:
       - name: Build static export
         run: npm run build
         env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
+          # Repo variables win; these fallbacks (public keys only) keep the
+          # build working out of the box even before variables are set.
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL || 'https://oytcwpemrrnqrbrtonyu.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95dGN3cGVtcnJucXJicnRvbnl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzNzk2NDcsImV4cCI6MjEwOTk1NTY0N30.RI8LIr9a68avb4kbaW9SmLVUZyUejcgBv5AdPDi7ZsM' }}
+          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL || 'https://anjuman.pages.dev' }}
           NEXT_PUBLIC_DEMO_MODE: ${{ vars.NEXT_PUBLIC_DEMO_MODE || 'false' }}
 
+      # NOTE: `secrets` cannot be used in an `if:` expression — doing so makes
+      # the whole workflow invalid. Check the secret from a shell step instead.
+      - name: Check Cloudflare credentials
+        id: cf
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::CLOUDFLARE_API_TOKEN is not set — build passed, deploy skipped."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to Cloudflare Pages
-        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+        if: steps.cf.outputs.configured == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy out --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+          command: pages deploy out --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT || 'anjuman' }} --branch=main

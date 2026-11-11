@@ -25,6 +25,36 @@ bill nahi — Free plan par bhi kaam karega.
 
 Nightly 02:00 **IST** par chalta hai (UTC me 20:30).
 
+### 1.1 Database ke andar already scheduled (Edge Function ke bina)
+
+`0018_daily_schedule.sql` teen `pg_cron` jobs lagata hai. Ye bina kisi Edge
+Function ke chalte hain, isliye Free plan par bhi kaam karte hain:
+
+| Job | Schedule | Kaam |
+| --- | --- | --- |
+| `anjuman-daily-maintenance` | `30 20 * * *` (02:00 IST) | invoices, reminders, due notices, expiry, queue retry, ledger check |
+| `anjuman-keepalive` | `0 */6 * * *` (har 6 ghante) | `job_runs` me ek row likhta hai — project kabhi idle nahi dikhta |
+| `anjuman-requeue` | `*/15 * * * *` (har 15 min) | failed messages wapas queue me |
+
+Check karne ke liye:
+
+```sql
+select jobname, schedule, active from cron.job;
+select job, status, started_at, error from public.job_runs order by started_at desc limit 10;
+```
+
+Manually ek baar chalana ho:
+
+```sql
+select public.keepalive();
+select public.run_daily_maintenance();
+```
+
+> **Kyun zaroori hai:** Supabase Free plan ~7 din bina kisi activity ke project
+> pause kar deta hai. `anjuman-keepalive` har 6 ghante database ko touch karta
+> hai, isliye pause nahi hoga. GitHub par `.github/workflows/keepalive.yml` bhi
+> roz ek REST ping bhejta hai — do layer ka safety net.
+
 ---
 
 ## 2. Pehli baar setup (15 minute)

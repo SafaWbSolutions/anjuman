@@ -1,0 +1,36 @@
+name: Supabase keepalive
+
+# Supabase Free pauses a project after ~7 days with no activity.
+# This workflow makes one small REST request every day so the project
+# always looks active, even if nobody opens the panel.
+#
+# The anon key below is a public key (protected by RLS). It is safe to
+# keep in the repo — it cannot read other tenants' data or write money.
+
+on:
+  schedule:
+    # 02:15 UTC = 07:45 IST, daily
+    - cron: "15 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        env:
+          SUPABASE_URL: https://oytcwpemrrnqrbrtonyu.supabase.co
+          ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95dGN3cGVtcnJucXJicnRvbnl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzNzk2NDcsImV4cCI6MjEwOTk1NTY0N30.RI8LIr9a68avb4kbaW9SmLVUZyUejcgBv5AdPDi7ZsM
+        run: |
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            -H "apikey: $ANON_KEY" \
+            -H "Authorization: Bearer $ANON_KEY" \
+            "$SUPABASE_URL/rest/v1/tenants?select=id&limit=1")
+          echo "Supabase responded with HTTP $code"
+          if [ "$code" -ge 500 ]; then
+            echo "::error::Supabase ping failed with HTTP $code"
+            exit 1
+          fi

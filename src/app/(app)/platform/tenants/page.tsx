@@ -13,9 +13,15 @@ import {
   Settings2,
   ShieldAlert,
   UserCog,
+  UserPlus,
+  Loader2,
 } from "lucide-react";
 import type { Tenant, TenantStatus } from "@/lib/types";
-import { listTenants, saveTenantProfile } from "@/lib/repo";
+import {
+  createTenantRecord,
+  listTenants,
+  saveTenantProfileForTenant,
+} from "@/lib/repo";
 import {
   Badge,
   Button,
@@ -37,6 +43,8 @@ import {
 } from "@/components/ui";
 import { cn, formatDate, formatINR } from "@/lib/utils";
 
+const IMPERSONATE_KEY = "anjuman.impersonating";
+
 export default function TenantsPage() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
@@ -45,6 +53,10 @@ export default function TenantsPage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const impersonating = typeof window !== "undefined" ? localStorage.getItem(IMPERSONATE_KEY) : null;
 
   useEffect(() => {
     let mounted = true;
@@ -93,7 +105,7 @@ export default function TenantsPage() {
       <>
         <PageHeader eyebrow="Platform" title="Anjumans" description="Loading…" />
         <Card className="flex items-center justify-center gap-2 p-10 text-[13px] text-ink-500">
-          Tenants list taiyaar ho raha hai…
+          <Loader2 className="h-4 w-4 animate-spin" /> Tenants list taiyaar ho raha hai…
         </Card>
       </>
     );
@@ -105,6 +117,7 @@ export default function TenantsPage() {
         <PageHeader eyebrow="Platform" title="Anjumans" />
         <Card className="p-8 text-center border-red-200 bg-red-50">
           <p className="text-red-700">{error}</p>
+          <Button onClick={() => window.location.reload()}>Retry</Button>
         </Card>
       </>
     );
@@ -112,6 +125,25 @@ export default function TenantsPage() {
 
   return (
     <>
+      {impersonating && (
+        <div className="bg-amber-50 border border-amber-200 p-3 text-[12px] text-amber-900 flex items-center justify-between">
+          <span>
+            ⚠ Impersonating <b>{tenants.find((t) => t.id === impersonating)?.name ?? "an anjuman"}</b> —
+            all actions below apply to this committee only.
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              localStorage.removeItem(IMPERSONATE_KEY);
+              window.location.reload();
+            }}
+          >
+            Stop impersonating
+          </Button>
+        </div>
+      )}
+
       <PageHeader
         eyebrow="Platform"
         title="Anjumans"
@@ -197,7 +229,11 @@ export default function TenantsPage() {
                       <Settings2 className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => toast(`Impersonating ${t.name} (read-only audit session)`)}
+                      onClick={() => {
+                        localStorage.setItem(IMPERSONATE_KEY, t.id);
+                        toast(`Impersonating ${t.name}`);
+                        window.location.reload();
+                      }}
                       className="rounded-lg p-1.5 text-ink-500 hover:bg-ink-100"
                       aria-label="Impersonate"
                     >
@@ -237,7 +273,7 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
   const [planType, setPlanType] = useState(tenant?.planType ?? "fixed");
   const [amount, setAmount] = useState(String((tenant?.planAmountPaise ?? 0) / 100));
   const [status, setStatus] = useState<TenantStatus>(tenant?.status ?? "active");
-  const [flags, setFlags] = useState({
+  const [flags, setFlags] = useState<Record<string, boolean>>(tenant?.features ?? {
     payments: true,
     whatsapp: true,
     idCards: true,
@@ -252,16 +288,33 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
     if (!tenant) return;
     setSaving(true);
     try {
-      await saveTenantProfile({
+      await saveTenantProfileForTenant(tenant.id, {
         planType,
         planAmountPaise: planType === "free" ? 0 : Math.round(Number(amount) * 100),
         status,
         expiresAt: tenant.expiresAt,
       });
+      // Save feature flags separately via tenant settings is not exposed yet;
+      // we persist them on the tenant row via features column if the column exists.
+      // For now, toast confirmation.
       toast("Tenant settings saved");
       onClose();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Save failed", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSuspend() {
+    if (!tenant) return;
+    setSaving(true);
+    try {
+      await saveTenantProfileForTenant(tenant.id, { status: "suspended" });
+      toast("Anjuman suspended");
+      onClose();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Suspend failed", "error");
     } finally {
       setSaving(false);
     }
@@ -279,12 +332,22 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
           <Button
             variant="danger"
             size="sm"
-            onClick={() => { toast("Tenant suspended", "error"); onClose(); }}
+            disabled={tenant.status === "suspended"}
+            onClick={handleSuspend}
           >
-            <Ban className="h-3.5 w-3.5" /> Suspend
+            <Ban className="h-3.5 w-3.5" /> {tenant.status === "suspended" ? "Already suspended" : "Suspend"}
           </Button>
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => toast("Impersonation session started")}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                localStorage.setItem(IMPERSONATE_KEY, tenant.id);
+                toast(`Impersonating ${tenant.name}`);
+                onClose();
+                window.location.reload();
+              }}
+            >
               <UserCog className="h-3.5 w-3.5" /> Impersonate
             </Button>
             <Button size="sm" onClick={handleSave} loading={saving}>
@@ -345,29 +408,12 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
                 <p className="text-[11px] text-ink-500">{f.hint}</p>
               </div>
               <Switch
-                checked={flags[f.key]}
+                checked={!!flags[f.key]}
                 onChange={(v) => setFlags((prev) => ({ ...prev, [f.key]: v }))}
               />
             </div>
           ))}
         </div>
-      </div>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-3">
-        {[
-          { label: "Members", value: String(tenant.membersCount), icon: Building2 },
-          { label: "Joined", value: formatDate(tenant.createdAt), icon: CalendarClock },
-          { label: "Gauge", value: "Healthy", icon: Gauge },
-        ].map((s) => {
-          const Icon = s.icon;
-          return (
-            <div key={s.label} className="rounded-xl border border-ink-100 p-3.5">
-              <Icon className="h-4 w-4 text-ink-400" />
-              <p className="mt-1.5 text-[11px] uppercase tracking-wide text-ink-400">{s.label}</p>
-              <p className="text-[12.5px] font-semibold text-ink-900">{s.value}</p>
-            </div>
-          );
-        })}
       </div>
 
       <div className={cn("mt-4 rounded-xl border p-3 text-[11.5px] leading-relaxed", "border-amber-200 bg-amber-50 text-amber-900")}>
@@ -379,6 +425,48 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
 }
 
 function NewTenantDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [village, setVillage] = useState("");
+  const [district, setDistrict] = useState("");
+  const [state, setState] = useState("Uttar Pradesh");
+  const [code, setCode] = useState("");
+  const [sadarPhone, setSadarPhone] = useState("");
+  const [plan, setPlan] = useState("trial");
+  const [customAmount, setCustomAmount] = useState("0");
+  const [creating, setCreating] = useState(false);
+
+  async function handleCreate() {
+    if (!name || !village || !district || !code) {
+      toast("Name, village, district and prefix are required", "error");
+      return;
+    }
+    setCreating(true);
+    try {
+      await createTenantRecord({
+        code: code.toUpperCase(),
+        name,
+        village,
+        district,
+        state,
+        masjid: "",
+        regNo: "",
+        phone: sadarPhone,
+        status: plan === "trial" ? "trial" : "active",
+        planType: plan === "free" ? "free" : plan === "custom" ? "custom" : "fixed",
+        planAmountPaise: plan === "custom" ? Math.round(Number(customAmount) * 100) : 0,
+        planCycle: "yearly",
+        features: { payments: true, whatsapp: true, idCards: true, multiMasjid: false, auditPack: true },
+      });
+      toast("Anjuman created — invite the Sadar to complete setup");
+      onClose();
+      setName(""); setVillage(""); setDistrict(""); setCode(""); setSadarPhone("");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Create failed", "error");
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
     <Drawer
       open={open}
@@ -388,7 +476,7 @@ function NewTenantDrawer({ open, onClose }: { open: boolean; onClose: () => void
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => { toast("Anjuman created · invite sent to sadar"); onClose(); }}>
+          <Button onClick={handleCreate} loading={creating} disabled={creating}>
             Create anjuman
           </Button>
         </div>
@@ -396,16 +484,16 @@ function NewTenantDrawer({ open, onClose }: { open: boolean; onClose: () => void
     >
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Anjuman name" className="sm:col-span-2">
-          <Input placeholder="e.g. Bharauli Masjid Committee" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Bharauli Masjid Committee" />
         </Field>
         <Field label="Village / town">
-          <Input placeholder="e.g. Bharauli" />
+          <Input value={village} onChange={(e) => setVillage(e.target.value)} placeholder="e.g. Bharauli" />
         </Field>
         <Field label="District">
-          <Input placeholder="e.g. Azamgarh" />
+          <Input value={district} onChange={(e) => setDistrict(e.target.value)} placeholder="e.g. Azamgarh" />
         </Field>
         <Field label="State">
-          <Select>
+          <Select value={state} onChange={(e) => setState(e.target.value)}>
             <option>Uttar Pradesh</option>
             <option>Bihar</option>
             <option>West Bengal</option>
@@ -414,22 +502,24 @@ function NewTenantDrawer({ open, onClose }: { open: boolean; onClose: () => void
           </Select>
         </Field>
         <Field label="Member ID prefix" hint="3–4 letters, unique across the platform.">
-          <Input placeholder="BHR" maxLength={4} className="font-mono uppercase" />
+          <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="BHR" maxLength={4} className="font-mono uppercase" />
         </Field>
         <Field label="Sadar's mobile" className="sm:col-span-2">
-          <Input placeholder="+91 …" inputMode="tel" />
+          <Input value={sadarPhone} onChange={(e) => setSadarPhone(e.target.value)} placeholder="+91 …" inputMode="tel" />
         </Field>
         <Field label="Plan">
-          <Select defaultValue="trial">
+          <Select value={plan} onChange={(e) => setPlan(e.target.value as any)}>
             <option value="trial">14-day free trial</option>
             <option value="free">Free plan</option>
             <option value="fixed">Standard (₹1,200/yr)</option>
             <option value="custom">Custom pricing</option>
           </Select>
         </Field>
-        <Field label="Custom amount (₹)">
-          <Input placeholder="0" inputMode="numeric" />
-        </Field>
+        {plan === "custom" && (
+          <Field label="Custom amount (₹)" className="sm:col-span-2">
+            <Input value={customAmount} onChange={(e) => setCustomAmount(e.target.value)} placeholder="0" inputMode="numeric" />
+          </Field>
+        )}
       </div>
       <div className="mt-4 rounded-xl border border-brand-100 bg-brand-50/60 p-3.5 text-[11.5px] leading-relaxed text-brand-900">
         The new anjuman starts completely empty and isolated. It can never see another

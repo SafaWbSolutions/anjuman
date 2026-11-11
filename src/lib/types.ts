@@ -47,6 +47,8 @@ export interface Tenant {
   latitude?: number | null;
   longitude?: number | null;
   timezone?: string;
+  /** Feature flags for this anjuman. */
+  features?: Record<string, boolean>;
 }
 
 export type MemberType = "member" | "donor" | "imam" | "muazzin" | "staff";

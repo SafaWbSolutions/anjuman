@@ -68,6 +68,7 @@ export const NAV: NavSection[] = [
     title: "Platform",
     items: [
       { label: "Anjumans", href: "/platform/tenants/", icon: "Network", roles: ["super_admin"] },
+      { label: "All Members", href: "/platform/members/", icon: "Users", roles: ["super_admin"] },
       { label: "Plans", href: "/platform/plans/", icon: "Layers", roles: ["super_admin"] },
       { label: "Billing Gateway", href: "/platform/billing/", icon: "Landmark", roles: ["super_admin"] },
     ],

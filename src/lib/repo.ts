@@ -39,10 +39,14 @@ import type {
   Invoice,
   LedgerEntry,
   Member,
+  MemberStatus,
+  MemberType,
   Notice,
   Payment,
+  PlanType,
   PrayerDay,
   Tenant,
+  TenantStatus,
 } from "./types";
 
 type Row = Record<string, any>;
@@ -130,6 +134,7 @@ function toTenant(r: Row): Tenant {
     latitude: r.latitude === null || r.latitude === undefined ? null : num(r.latitude),
     longitude: r.longitude === null || r.longitude === undefined ? null : num(r.longitude),
     timezone: r.timezone ?? "Asia/Kolkata",
+    features: typeof r.features === "object" && r.features !== null ? (r.features as Record<string, boolean>) : {},
   };
 }
 
@@ -686,6 +691,178 @@ export async function saveTenantProfile(patch: TenantProfilePatch): Promise<void
     .update(row)
     .eq("id", await myTenantId());
   if (error) throw error;
+}
+
+/** Update any tenant's profile — super admin only (RLS bypasses tenant scoping). */
+export async function saveTenantProfileForTenant(
+  tenantId: string,
+  patch: TenantProfilePatch
+): Promise<void> {
+  if (isDemoMode) return;
+
+  const row: Row = {};
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.masjid !== undefined) row.masjid = patch.masjid;
+  if (patch.village !== undefined) row.village = patch.village;
+  if (patch.district !== undefined) row.district = patch.district;
+  if (patch.state !== undefined) row.state = patch.state;
+  if (patch.pincode !== undefined) row.pincode = patch.pincode;
+  if (patch.phone !== undefined) row.phone = patch.phone;
+  if (patch.email !== undefined) row.email = patch.email;
+  if (patch.regNo !== undefined) row.reg_no = patch.regNo;
+  if (patch.upiId !== undefined) row.upi_id = patch.upiId;
+  if (patch.address !== undefined) row.address = patch.address;
+  if (patch.logoUrl !== undefined) row.logo_url = patch.logoUrl;
+  if (patch.themeColor !== undefined) row.theme_color = patch.themeColor;
+  if (patch.planType !== undefined) row.plan_type = patch.planType;
+  if (patch.planAmountPaise !== undefined) row.plan_amount_paise = patch.planAmountPaise;
+  if (patch.status !== undefined) row.status = patch.status;
+  if (patch.expiresAt !== undefined) row.expires_at = patch.expiresAt;
+
+  if (Object.keys(row).length === 0) return;
+
+  const { error } = await client().from("tenants").update(row).eq("id", tenantId);
+  if (error) throw error;
+}
+
+/** Create a new anjuman record — super admin only. */
+export async function createTenantRecord(profile: {
+  code: string;
+  name: string;
+  village: string;
+  district: string;
+  state: string;
+  pincode?: string;
+  masjid?: string;
+  regNo?: string;
+  phone?: string;
+  email?: string;
+  upiId?: string;
+  status?: TenantStatus;
+  planType?: PlanType;
+  planAmountPaise?: number;
+  planCycle?: "monthly" | "yearly" | "lifetime";
+  expiresAt?: string | null;
+  features?: Record<string, unknown>;
+}): Promise<string> {
+  if (isDemoMode) return "demo-tenant";
+
+  const { data, error } = await client()
+    .from("tenants")
+    .insert({
+      code: profile.code,
+      name: profile.name,
+      village: profile.village,
+      district: profile.district,
+      state: profile.state,
+      pincode: profile.pincode ?? "",
+      masjid: profile.masjid ?? "",
+      reg_no: profile.regNo ?? "",
+      phone: profile.phone ?? "",
+      email: profile.email ?? "",
+      upi_id: profile.upiId ?? "",
+      status: profile.status ?? "trial",
+      plan_type: profile.planType ?? "free",
+      plan_amount_paise: profile.planAmountPaise ?? 0,
+      plan_cycle: profile.planCycle ?? "yearly",
+      expires_at: profile.expiresAt ?? null,
+      features: profile.features ?? { payments: true, whatsapp: true, idCards: true },
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  return data.id;
+}
+
+/** Update any member across all anjumans — super admin only. */
+export async function updateMemberAcrossTenants(
+  memberId: string,
+  tenantId: string,
+  patch: {
+    name?: string;
+    fatherName?: string;
+    phone?: string;
+    household?: string;
+    mohalla?: string;
+    type?: MemberType;
+    status?: MemberStatus;
+    feePaise?: number;
+    bloodGroup?: string;
+    concession?: string;
+  }
+): Promise<void> {
+  if (isDemoMode) return;
+
+  const row: Row = {};
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.fatherName !== undefined) row.father_name = patch.fatherName;
+  if (patch.phone !== undefined) row.phone = patch.phone;
+  if (patch.household !== undefined) row.household = patch.household;
+  if (patch.mohalla !== undefined) row.mohalla = patch.mohalla;
+  if (patch.type !== undefined) row.member_type = patch.type;
+  if (patch.status !== undefined) row.status = patch.status;
+  if (patch.feePaise !== undefined) row.fee_paise = patch.feePaise;
+  if (patch.bloodGroup !== undefined) row.blood_group = patch.bloodGroup;
+  if (patch.concession !== undefined) row.concession = patch.concession;
+
+  if (Object.keys(row).length === 0) return;
+
+  const { error } = await client()
+    .from("members")
+    .update(row)
+    .eq("id", memberId)
+    .eq("tenant_id", tenantId);
+  if (error) throw error;
+}
+
+/** Activate or deactivate any member across anjumans — super admin only. */
+export async function setMemberActiveAcrossTenants(
+  memberId: string,
+  tenantId: string,
+  active: boolean
+): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client()
+    .from("members")
+    .update({ status: active ? "active" : "inactive" })
+    .eq("id", memberId)
+    .eq("tenant_id", tenantId);
+  if (error) throw error;
+}
+
+/** List all members across all anjumans with tenant name — super admin only. */
+export async function listAllMembers(): Promise<(Member & { tenantName: string })[]> {
+  if (isDemoMode) {
+    return mockMembers.map((m) => ({ ...m, tenantName: activeTenant.name }));
+  }
+
+  const { data, error } = await client()
+    .from("members")
+    .select("*, tenants(name)")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  return (data ?? []).map((r: Row) => ({
+    id: r.id,
+    tenantId: r.tenant_id,
+    code: r.code,
+    name: r.name,
+    fatherName: r.father_name ?? "",
+    phone: r.phone ?? "",
+    household: r.household ?? "",
+    mohalla: r.mohalla ?? "",
+    type: r.member_type,
+    status: r.status,
+    feePaise: num(r.fee_paise),
+    joinedOn: r.joined_on,
+    bloodGroup: r.blood_group ?? undefined,
+    photoUrl: r.photo_url ?? undefined,
+    concession: r.concession ?? undefined,
+    tenantName: (r.tenants as any)?.name ?? "",
+  }));
 }
 
 /** Masjid coordinates, used by the calculated prayer timetable. */

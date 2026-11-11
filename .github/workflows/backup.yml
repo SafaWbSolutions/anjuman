@@ -3,9 +3,11 @@ name: Nightly backup
 # Dumps the whole Postgres database every night and keeps a copy in
 # three places (whichever are configured):
 #
-#   1. GitHub artifact, 90 days  — always on, zero setup
-#   2. Cloudflare R2 bucket     — only when R2_* secrets exist
-#   3. Run summary + size check — so a silent failure is visible
+#   1. GitHub Release `backup-archive` — permanent, never expires
+#   2. Cloudflare R2 bucket          — only when R2_* secrets exist
+#   3. Run summary + size check     — so a silent failure is visible
+#
+# Every backup file carries its date: anjuman-YYYYMMDD-HHMM.sql.gz[.gpg]
 #
 # Required secret:
 #   SUPABASE_DB_URL = postgresql://postgres:<password>@db.<ref>.supabase.co:5432/postgres
@@ -24,7 +26,7 @@ on:
       - ".github/workflows/backup.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: nightly-backup
@@ -143,13 +145,27 @@ jobs:
           aws s3 cp "$FILE" "s3://$R2_BUCKET/$PREFIX/$FILE" --endpoint-url "$R2_ENDPOINT"
           echo "R2_USED=yes ($R2_BUCKET)" >> "$GITHUB_ENV"
 
-      - name: Keep a GitHub copy (90 days)
-        if: always() && env.FILE != ''
-        uses: actions/upload-artifact@v4
+      - name: Refuse to publish a plaintext dump
+        if: env.FILE != '' && env.ENCRYPTED != 'true'
+        run: |
+          echo "::error::BACKUP_PASSPHRASE is not set — refusing to publish a plaintext dump to the public release. Add the secret and re-run."
+          exit 1
+
+      - name: Save to dated GitHub Release (no expiry)
+        if: env.FILE != '' && env.ENCRYPTED == 'true'
+        uses: softprops/action-gh-release@v2
         with:
-          name: anjuman-backup-${{ github.run_id }}
-          path: "*.sql.gz*"
-          retention-days: 90
+          tag_name: backup-archive
+          name: Automated database backups
+          body: |
+            Daily encrypted PostgreSQL dumps, newest first.
+
+            Every file is named `anjuman-YYYYMMDD-HHMM.sql.gz.gpg`, so the
+            backup date is always visible. These release assets do **not**
+            expire. Restore steps: see `BACKUP.md` in the repository.
+          files: ${{ env.FILE }}
+          make_latest: false
+          fail_on_unmatched_files: true
 
       - name: Summary
         if: always()
@@ -159,5 +175,6 @@ jobs:
             echo "- File: \`${FILE:-not created}\`"
             echo "- Size: ${SIZE_KB:-?} KB"
             echo "- Encrypted: ${ENCRYPTED:-no}"
+            echo "- Saved to: GitHub Release \`backup-archive\` (no expiry)"
             echo "- R2: ${R2_USED:-not configured}"
           } >> "$GITHUB_STEP_SUMMARY"

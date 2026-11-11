@@ -8,7 +8,7 @@ backup is a second safety net, not the first one.
 
 | Copy | Retention | Setup |
 | --- | --- | --- |
-| GitHub Actions artifact (`anjuman-backup-<run id>`) | 90 days | automatic |
+| GitHub Release `backup-archive` (dated assets) | **never expires** | automatic |
 | Cloudflare R2 `backups/YYYY/MM/DD/` | as long as you keep it | optional |
 | Run summary (file name + size) | run history | automatic |
 
@@ -21,9 +21,9 @@ corrupt, so a "green" run always means a real backup exists.
 > user `postgres.<ref>`) and installs the PostgreSQL 17 client to match the
 > server. You do not need to change the secret.
 >
-> GitHub artifacts require a GitHub login to download (anonymous access is
-> refused), but for member phone/financial data still set
-> `BACKUP_PASSPHRASE` so the dump is AES-256 encrypted at rest.
+> GitHub Releases are public for a public repository, so the workflow
+> refuses to publish an unencrypted dump: `BACKUP_PASSPHRASE` is required
+> and every release asset is AES-256 encrypted (`gpg`).
 
 ## One-time setup
 
@@ -45,9 +45,19 @@ Percent-encode special characters in the DB password (`@` → `%40`).
 
 ## Download a backup
 
-1. GitHub → **Actions** → **Nightly backup** → pick a run.
-2. Scroll to **Artifacts** → download `anjuman-backup-<run id>`.
-3. Unzip → you get `anjuman-YYYYMMDD-HHMM.sql.gz` (or `.sql.gz.gpg`).
+👉 **https://github.com/SafaWbSolutions/anjuman/releases/tag/backup-archive**
+
+Every nightly run adds one asset there:
+
+```
+anjuman-20261112-0230.sql.gz.gpg   ← date is in the file name
+anjuman-20261113-0230.sql.gz.gpg
+...
+```
+
+Assets in this release **never expire** — no 90-day limit. Because the
+repository is public, the release only accepts **encrypted** dumps; the job
+fails instead of publishing a plaintext file.
 
 ## Restore into a fresh Supabase project
 

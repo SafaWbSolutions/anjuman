@@ -4,15 +4,21 @@ import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import {
   CheckSquare,
-  IdCard,
+  Download,
   Printer,
-  Search,
+  Share2,
   Square,
   Users,
 } from "lucide-react";
 import type { Member, Tenant } from "@/lib/types";
 import { listMembers, getCurrentTenant } from "@/lib/repo";
-import { cn, printArea } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
+import {
+  cn,
+  downloadNodePng,
+  printArea,
+  shareNodeOnWhatsApp,
+} from "@/lib/utils";
 import {
   Avatar,
   Badge,
@@ -25,6 +31,9 @@ import {
 } from "@/components/ui";
 
 export default function IdCardsPage() {
+  const { user } = useAuth();
+  const isMember = user?.role === "member";
+
   const [q, setQ] = useState("");
   const [mohalla, setMohalla] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -36,10 +45,18 @@ export default function IdCardsPage() {
   const [error, setError] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  // A member opening "My ID card" only ever sees their own card.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const id = new URLSearchParams(window.location.search).get("member");
+    if (id) setSelected(new Set([id]));
   }, []);
 
   // Load data
@@ -63,9 +80,24 @@ export default function IdCardsPage() {
     };
   }, []);
 
+  const myMember = useMemo(() => {
+    if (!isMember) return null;
+    return (
+      members.find((m) => m.id === user?.memberId) ??
+      members.find((m) => !!user?.phone && m.phone === user.phone) ??
+      (isMember ? members[0] ?? null : null)
+    );
+  }, [isMember, members, user?.memberId, user?.phone]);
+
+  // QR codes are only needed for the cards that can actually be shown.
+  const qrMembers = useMemo(
+    () => (isMember ? (myMember ? [myMember] : []) : members),
+    [isMember, myMember, members]
+  );
+
   // Generate QR codes - only runs on client side after mount
   useEffect(() => {
-    if (!mounted || members.length === 0) return;
+    if (!mounted || qrMembers.length === 0) return;
     let cancelled = false;
     setQrLoading(true);
     setQrError(null);
@@ -74,7 +106,7 @@ export default function IdCardsPage() {
         const next: Record<string, string> = {};
         // Use relative URL to avoid hydration mismatch during static export
         // The browser will resolve it correctly when scanned
-        for (const m of members) {
+        for (const m of qrMembers) {
           if (cancelled) break;
           const url = `/verify/?id=${m.code}`;
           next[m.id] = await QRCode.toDataURL(url, {
@@ -96,7 +128,7 @@ export default function IdCardsPage() {
     return () => {
       cancelled = true;
     };
-  }, [members, mounted]);
+  }, [qrMembers, mounted]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -116,7 +148,28 @@ export default function IdCardsPage() {
     [members]
   );
 
-  const chosen = members.filter((m) => selected.has(m.id));
+  const chosen = useMemo(
+    () => members.filter((m) => selected.has(m.id)),
+    [members, selected]
+  );
+
+  const pageSize = Number(layout);
+
+  // Sheet pages: 8 (or 6) cards per A4 page, never more.
+  const pages = useMemo(() => {
+    const list = isMember
+      ? myMember
+        ? [myMember]
+        : []
+      : chosen.length
+        ? chosen
+        : members.slice(0, pageSize);
+    const out: Member[][] = [];
+    for (let i = 0; i < list.length; i += pageSize) {
+      out.push(list.slice(i, i + pageSize));
+    }
+    return out;
+  }, [isMember, myMember, chosen, members, pageSize]);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -125,6 +178,48 @@ export default function IdCardsPage() {
       else next.add(id);
       return next;
     });
+  }
+
+  function cardNode(id: string) {
+    return document.querySelector<HTMLElement>(`[data-card-member="${id}"]`);
+  }
+
+  async function downloadCard(m: Member) {
+    const node = cardNode(m.id);
+    if (!node) return toast("Card taiyaar nahi hai", "error");
+    setBusy(`dl-${m.id}`);
+    try {
+      await downloadNodePng(node, `${m.code}-id-card.png`);
+      toast("ID card PNG download ho gaya");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Download fail ho gaya", "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function cardShareText(m: Member) {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return [
+      `${tenant?.name ?? "Anjuman"} — member ID card`,
+      `${m.name} · ${m.code}`,
+      `Verify: ${origin}/verify/?id=${m.code}`,
+    ].join("\n");
+  }
+
+  async function shareCard(m: Member) {
+    const node = cardNode(m.id);
+    if (!node) return toast("Card taiyaar nahi hai", "error");
+    setBusy(`share-${m.id}`);
+    try {
+      const res = await shareNodeOnWhatsApp(node, `${m.code}-id-card.png`, cardShareText(m));
+      if (res === "shared") toast("WhatsApp share sheet khul gaya");
+      else if (res === "downloaded") toast("PNG download hua — WhatsApp me attach kar dein");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Share fail ho gaya", "error");
+    } finally {
+      setBusy(null);
+    }
   }
 
   if (loading) {
@@ -149,6 +244,69 @@ export default function IdCardsPage() {
     );
   }
 
+  /* ── Member view: exactly one card, download / share / print ───── */
+  if (isMember) {
+    return (
+      <>
+        <PageHeader
+          eyebrow="My account"
+          title="My ID card"
+          description="Aapka Anjuman member card — download karein, WhatsApp par bhejein ya print nikaalein."
+          actions={
+            myMember ? (
+              <>
+                <Button
+                  variant="secondary"
+                  loading={busy === `dl-${myMember.id}`}
+                  onClick={() => void downloadCard(myMember)}
+                >
+                  <Download className="h-4 w-4" /> Download
+                </Button>
+                <Button
+                  variant="secondary"
+                  loading={busy === `share-${myMember.id}`}
+                  onClick={() => void shareCard(myMember)}
+                >
+                  <Share2 className="h-4 w-4" /> WhatsApp
+                </Button>
+                <Button onClick={() => printArea()}>
+                  <Printer className="h-4 w-4" /> Print
+                </Button>
+              </>
+            ) : undefined
+          }
+        />
+
+        {!myMember ? (
+          <Card className="mx-auto max-w-lg p-10 text-center">
+            <Users className="mx-auto h-8 w-8 text-ink-300" />
+            <p className="mt-2 text-[13.5px] font-medium text-ink-800">
+              Aapka member record link nahi hai
+            </p>
+            <p className="mt-1 text-[12px] text-ink-500">
+              Sadar se sampark karein taake aapka account member list se link ho jaye.
+            </p>
+          </Card>
+        ) : (
+          <div className="mx-auto w-fit">
+            <div className="rounded-2xl bg-white p-4 shadow-[var(--shadow-card)] ring-1 ring-ink-200">
+              <div className="print-area">
+                <MemberCard member={myMember} qr={qr[myMember.id]} tenant={tenant} />
+              </div>
+            </div>
+            <p className="no-print mt-3 text-center text-[12px] text-ink-500">
+              Ye card Aadhaar-size (85 × 54 mm) hai. Print karne par sirf card hi
+              nikalta hai.
+            </p>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  /* ── Office view: build A4 sheets of 8 (or 6) cards ────────────── */
+  const single = chosen.length === 1 ? chosen[0] : null;
+
   return (
     <>
       <PageHeader
@@ -162,6 +320,22 @@ export default function IdCardsPage() {
               onClick={() => setSelected(new Set(filtered.map((m) => m.id)))}
             >
               <CheckSquare className="h-4 w-4" /> Select all ({filtered.length})
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!single}
+              loading={!!single && busy === `dl-${single.id}`}
+              onClick={() => single && void downloadCard(single)}
+            >
+              <Download className="h-4 w-4" /> Download
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!single}
+              loading={!!single && busy === `share-${single.id}`}
+              onClick={() => single && void shareCard(single)}
+            >
+              <Share2 className="h-4 w-4" /> WhatsApp
             </Button>
             <Button
               onClick={() => {
@@ -215,6 +389,11 @@ export default function IdCardsPage() {
                 Clear
               </button>
             </div>
+            {chosen.length > 1 && (
+              <p className="mt-2 text-[11px] text-ink-400">
+                Download / WhatsApp ke liye sirf 1 member select karein.
+              </p>
+            )}
           </Card>
 
           <Card className="max-h-[520px] overflow-y-auto">
@@ -254,7 +433,7 @@ export default function IdCardsPage() {
           </Card>
         </div>
 
-        {/* ── Preview / print sheet ───────────────────────── */}
+        {/* ── Preview / print sheets ──────────────────────── */}
         <div>
           <div className="no-print mb-3 flex flex-wrap items-center gap-2">
             <Badge tone="brand">A4 preview</Badge>
@@ -263,8 +442,7 @@ export default function IdCardsPage() {
               85 × 54 mm
             </span>
             <span className="ml-auto text-[12px] text-ink-400">
-              {Math.ceil(chosen.length / Number(layout))} page
-              {Math.ceil(chosen.length / Number(layout)) === 1 ? "" : "s"}
+              {pages.length} page{pages.length === 1 ? "" : "s"}
             </span>
             {qrLoading && (
               <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-brand-600">
@@ -280,20 +458,31 @@ export default function IdCardsPage() {
           </div>
 
           {mounted && members.length > 0 ? (
-            <div className="print-area">
-              <div
-                className={cn(
-                  "mx-auto rounded-2xl bg-white p-6 shadow-[var(--shadow-card)] ring-1 ring-ink-200 print:rounded-none print:p-0 print:shadow-none print:ring-0",
-                  "id-sheet"
-                )}
-                style={{
-                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                }}
-              >
-                {(chosen.length ? chosen : members.slice(0, 8)).map((m) => (
-                  <MemberCard key={m.id} member={m} qr={qr[m.id]} tenant={tenant} />
-                ))}
-              </div>
+            <div className="space-y-6">
+              {pages.map((page, idx) => (
+                <div key={idx}>
+                  {pages.length > 1 && (
+                    <p className="no-print mb-2 text-center text-[11px] text-ink-400">
+                      Sheet {idx + 1} of {pages.length}
+                    </p>
+                  )}
+                  <div className="print-area">
+                    <div
+                      className={cn(
+                        "mx-auto rounded-2xl bg-white p-6 shadow-[var(--shadow-card)] ring-1 ring-ink-200 print:rounded-none print:p-0 print:shadow-none print:ring-0",
+                        "id-sheet"
+                      )}
+                      style={{
+                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      }}
+                    >
+                      {page.map((m) => (
+                        <MemberCard key={m.id} member={m} qr={qr[m.id]} tenant={tenant} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div>
@@ -305,8 +494,8 @@ export default function IdCardsPage() {
 
           {!chosen.length && (
             <p className="no-print mt-3 text-center text-[12px] text-ink-500">
-              Showing first 8 members as a sample. Select members to build the
-              real sheet.
+              Showing first {pageSize} members as a sample. Select members to build
+              the real sheet.
             </p>
           )}
         </div>
@@ -325,7 +514,7 @@ function MemberCard({
   tenant: Tenant | null;
 }) {
   return (
-    <div className="id-card flex flex-col text-ink-900">
+    <div className="id-card flex flex-col text-ink-900" data-card-member={member.id}>
       {/* header */}
       <div className="relative flex items-center gap-2 bg-ink-900 px-3 py-2 text-white">
         <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand-500 text-[11px] font-bold">

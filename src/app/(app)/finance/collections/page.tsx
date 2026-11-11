@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Banknote,
@@ -8,11 +8,13 @@ import {
   ChevronRight,
   Clock,
   CreditCard,
+  Download,
   FileText,
   HandCoins,
   Printer,
   RefreshCw,
   Search,
+  Share2,
   ShieldCheck,
   Smartphone,
   Wallet,
@@ -33,10 +35,12 @@ import { isDemoMode } from "@/lib/supabase";
 import {
   amountInWords,
   cn,
+  downloadNodePng,
   formatDate,
   formatINR,
   periodLabel,
   printArea,
+  shareNodeOnWhatsApp,
 } from "@/lib/utils";
 import {
   Avatar,
@@ -911,8 +915,49 @@ function ReceiptDrawer({
   onClose: () => void;
 }) {
   const [size, setSize] = useState<"58" | "80">("80");
+  const [busy, setBusy] = useState<"download" | "share" | null>(null);
+  const receiptRef = useRef<HTMLDivElement>(null);
   if (!receipt) return null;
   const { member, amount, months } = receipt;
+
+  async function downloadReceipt() {
+    if (!receiptRef.current || !receipt) return;
+    setBusy("download");
+    try {
+      await downloadNodePng(receiptRef.current, `${receipt.receiptNo}.png`);
+      toast("Receipt PNG download ho gaya");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Download fail ho gaya", "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function shareReceipt() {
+    if (!receiptRef.current || !receipt) return;
+    setBusy("share");
+    try {
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const text = [
+        `${tenant.name} — payment receipt`,
+        `${receipt.receiptNo} · ${formatINR(amount)}`,
+        `${member.name} (${member.code})`,
+        `Period: ${months.map(periodLabel).join(", ")}`,
+        `Verify: ${origin}/verify/?id=${member.code}`,
+      ].join("\n");
+      const res = await shareNodeOnWhatsApp(
+        receiptRef.current,
+        `${receipt.receiptNo}.png`,
+        text
+      );
+      if (res === "shared") toast("WhatsApp share sheet khul gaya");
+      else if (res === "downloaded") toast("PNG download hua — WhatsApp me attach kar dein");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Share fail ho gaya", "error");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <Drawer
@@ -922,11 +967,25 @@ function ReceiptDrawer({
       subtitle={receipt.receiptNo}
       width="max-w-md"
       footer={
-        <div className="flex gap-2">
-          <Button variant="secondary" className="flex-1" onClick={onClose}>
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="secondary" onClick={onClose}>
             Close
           </Button>
-          <Button className="flex-1" onClick={() => printArea()}>
+          <Button
+            variant="secondary"
+            loading={busy === "download"}
+            onClick={() => void downloadReceipt()}
+          >
+            <Download className="h-4 w-4" /> PNG
+          </Button>
+          <Button
+            variant="secondary"
+            loading={busy === "share"}
+            onClick={() => void shareReceipt()}
+          >
+            <Share2 className="h-4 w-4" /> WhatsApp
+          </Button>
+          <Button onClick={() => printArea()}>
             <Printer className="h-4 w-4" /> Print
           </Button>
         </div>
@@ -955,6 +1014,7 @@ function ReceiptDrawer({
 
       <div className="flex justify-center rounded-xl bg-ink-50 p-4">
         <div
+          ref={receiptRef}
           className={cn(
             "print-area bg-white p-3 shadow-sm",
             size === "58" ? "receipt-58" : "receipt-80"

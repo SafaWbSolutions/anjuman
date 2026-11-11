@@ -451,7 +451,13 @@ function MemberDrawer({
             <span className="font-medium text-ink-700">{tenantName}</span>
           </p>
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => toast("ID card queued for printing")}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                window.location.href = `/id-cards/?member=${member.id}`;
+              }}
+            >
               <IdCard className="h-3.5 w-3.5" /> ID card
             </Button>
             <Button size="sm" onClick={() => toast("Payment entry opened")}>

@@ -234,3 +234,75 @@ export function ensurePrintRoot() {
   if (document.getElementById("print-root")) return;
   buildPrintRoot();
 }
+
+/* ── Image download / WhatsApp share ────────────────────────────────
+   Used for a single ID card or a single receipt: turn the visible node
+   into a high-resolution PNG, then download it or hand it to the phone's
+   native share sheet (WhatsApp shows up there). No server involved. */
+
+export function whatsappShareUrl(text: string) {
+  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+}
+
+async function nodeToPngBlob(node: HTMLElement, pixelRatio = 3): Promise<Blob> {
+  const { toBlob } = await import("html-to-image");
+  const blob = await toBlob(node, {
+    pixelRatio,
+    backgroundColor: "#ffffff",
+    cacheBust: true,
+  });
+  if (!blob) throw new Error("Image generate nahi ho payi");
+  return blob;
+}
+
+function saveBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+/** Download one visible node (an ID card, a receipt) as a PNG. */
+export async function downloadNodePng(node: HTMLElement, fileName: string) {
+  const blob = await nodeToPngBlob(node);
+  saveBlob(blob, fileName);
+}
+
+export type ShareResult = "shared" | "downloaded" | "cancelled";
+
+/**
+ * Share one node as an image on WhatsApp. Where the browser supports file
+ * sharing (Android/iOS/Windows), the native sheet opens with WhatsApp in the
+ * list. Otherwise the PNG downloads and WhatsApp opens with a prefilled
+ * message, so the user only has to attach the just-saved image.
+ */
+export async function shareNodeOnWhatsApp(
+  node: HTMLElement,
+  fileName: string,
+  text: string
+): Promise<ShareResult> {
+  const blob = await nodeToPngBlob(node);
+
+  if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+    const file = new File([blob], fileName, { type: "image/png" });
+    const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
+    const canShareFile = nav.canShare ? nav.canShare({ files: [file] }) : false;
+    if (canShareFile) {
+      try {
+        await navigator.share({ files: [file], text, title: fileName });
+        return "shared";
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return "cancelled";
+        // Any other failure falls back to download + wa.me below.
+      }
+    }
+  }
+
+  saveBlob(blob, fileName);
+  window.open(whatsappShareUrl(text), "_blank", "noopener,noreferrer");
+  return "downloaded";
+}

@@ -77,6 +77,7 @@ const DEMO_USERS: Record<Role, SessionUser> = {
     phone: "+91 9800000001",
     email: "member@bharauli.in",
     role: "member",
+    memberId: "m-1",
     tenantId: activeTenant.id,
     tenantName: activeTenant.name,
   },

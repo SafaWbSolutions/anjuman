@@ -38,6 +38,7 @@ export const NAV: NavSection[] = [
       { label: "Members", href: "/members/", icon: "Users", roles: [...OFFICE, "collector", "super_admin"] },
       { label: "Households", href: "/households/", icon: "Home", roles: OFFICE },
       { label: "ID Cards", href: "/id-cards/", icon: "IdCard", roles: ["sadar", "secretary", "super_admin"] },
+      { label: "My ID card", href: "/id-cards/", icon: "IdCard", roles: ["member"] },
       { label: "Namaz & Azan", href: "/namaz/", icon: "MoonStar", roles: [...OFFICE, "member"] },
       { label: "Notices", href: "/notices/", icon: "Megaphone", roles: ALL },
       { label: "Complaints", href: "/complaints/", icon: "MessageSquareWarning", roles: [...OFFICE, "member"] },

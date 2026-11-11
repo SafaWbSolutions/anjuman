@@ -1,18 +1,22 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
 export default function HomePage() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const isAuthed =
-      typeof window !== "undefined" &&
-      window.localStorage.getItem("anjuman.session") !== null;
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const isAuthed = window.localStorage.getItem("anjuman.session") !== null;
     router.replace(isAuthed ? "/dashboard/" : "/login/");
-  }, [router]);
+  }, [router, mounted]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-ink-50">

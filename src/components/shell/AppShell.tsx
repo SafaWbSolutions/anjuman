@@ -21,7 +21,9 @@ import { navForRole } from "@/lib/nav";
 import { ROLE_LABEL, type Role } from "@/lib/types";
 import { cn, ensurePrintRoot } from "@/lib/utils";
 import { members, complaints, approvals } from "@/lib/mock";
-import { Avatar, Badge, Toaster } from "@/components/ui";
+import { generateInvoices } from "@/lib/repo";
+import { isDemoMode } from "@/lib/supabase";
+import { Avatar, Badge, Toaster, toast } from "@/components/ui";
 
 const iconFor = (name: string): LucideIcon =>
   (Icons[name as keyof typeof Icons] as LucideIcon) ?? Icons.Circle;
@@ -36,6 +38,44 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (ready && !user) router.replace("/login/");
   }, [ready, user, router]);
+
+  // Self-healing monthly dues: whenever an office user opens the panel,
+  // make sure this month's invoices exist. The RPC is idempotent, so this
+  // works even if GitHub Actions / pg_cron never ran — the app itself
+  // catches up. One attempt per browser per month.
+  useEffect(() => {
+    if (demoMode || isDemoMode || !user) return;
+    if (!["sadar", "khajanchi", "secretary"].includes(user.role)) return;
+
+    const period = new Date().toISOString().slice(0, 7);
+    const key = `anjuman.invoices.${user.tenantId ?? user.id}.${period}`;
+    try {
+      if (window.localStorage.getItem(key) === "1") return;
+    } catch {
+      /* private mode — still try */
+    }
+
+    let alive = true;
+    generateInvoices()
+      .then((r) => {
+        if (!alive) return;
+        try {
+          window.localStorage.setItem(key, "1");
+        } catch {
+          /* ignore */
+        }
+        if (r.created > 0) {
+          toast(`${r.created} member(s) ke ${period} ke dues ban gaye`);
+        }
+      })
+      .catch(() => {
+        /* offline or RLS — the daily job will retry */
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [user?.id, user?.role, user?.tenantId, demoMode]);
 
   useEffect(() => {
     setMobileOpen(false);

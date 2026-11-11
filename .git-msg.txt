@@ -1,6 +1,0 @@
-fix(id-cards): resolve hydration mismatch for static export
-
-- Use relative URL `/verify/?id=CODE` for QR codes (no window.location.origin)
-- Added `mounted` check before rendering print area
-- Loading placeholder while data/QR not ready
-- Typecheck, build all pass

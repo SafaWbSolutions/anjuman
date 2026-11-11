@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Building2,
   CheckCircle2,
@@ -11,7 +11,8 @@ import {
   Save,
   ShieldCheck,
 } from "lucide-react";
-import { activeTenant } from "@/lib/mock";
+import type { Tenant } from "@/lib/types";
+import { getCurrentTenant, saveTenantProfile } from "@/lib/repo";
 import {
   Badge,
   Button,
@@ -24,9 +25,107 @@ import {
   toast,
 } from "@/components/ui";
 
+const STATES = [
+  "Uttar Pradesh",
+  "Bihar",
+  "West Bengal",
+  "Maharashtra",
+  "Karnataka",
+  "Telangana",
+  "Other",
+] as const;
+
+const THEME_COLORS = ["#059669", "#0ea5e9", "#7c3aed", "#d97706", "#dc2626"] as const;
+
+const VERIFICATION_ITEMS = [
+  { label: "Phone verified", key: "phoneVerified" },
+  { label: "Registration certificate", key: "regCert" },
+  { label: "Bank account verified", key: "bankVerified" },
+  { label: "PAN / trust deed", key: "panDeed" },
+] as const;
+
 export default function AnjumanProfilePage() {
-  const [upi, setUpi] = useState(activeTenant.upiId);
-  const [regNo, setRegNo] = useState(activeTenant.regNo);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [verification, setVerification] = useState<Record<string, boolean>>({
+    phoneVerified: true,
+    regCert: true,
+    bankVerified: true,
+    panDeed: false,
+  });
+
+  // Load tenant
+  useEffect(() => {
+    let mounted = true;
+    getCurrentTenant()
+      .then((t) => {
+        if (mounted) setTenant(t);
+      })
+      .catch((e) => {
+        if (mounted) setError(e instanceof Error ? e.message : "Profile load nahi hua");
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function handleSave() {
+    if (!tenant) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await saveTenantProfile({
+        name: tenant.name,
+        masjid: tenant.masjid,
+        village: tenant.village,
+        district: tenant.district,
+        state: tenant.state,
+        pincode: tenant.pincode,
+        phone: tenant.phone,
+        email: tenant.email ?? "",
+        regNo: tenant.regNo,
+        upiId: tenant.upiId,
+        address: tenant.address,
+        logoUrl: tenant.logoUrl,
+        themeColor: tenant.themeColor,
+      });
+      toast("Profile saved");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+      toast(e instanceof Error ? e.message : "Save failed", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <>
+        <PageHeader eyebrow="Settings" title="Anjuman profile" description="Loading…" />
+        <Card className="flex items-center justify-center gap-2 p-10 text-[13px] text-ink-500">
+          Profile taiyaar ho raha hai…
+        </Card>
+      </>
+    );
+  }
+
+  if (error && !tenant) {
+    return (
+      <>
+        <PageHeader eyebrow="Settings" title="Anjuman profile" />
+        <Card className="p-8 text-center border-red-200 bg-red-50">
+          <p className="text-red-700">{error}</p>
+        </Card>
+      </>
+    );
+  }
+
+  const t = tenant!;
 
   return (
     <>
@@ -35,11 +134,18 @@ export default function AnjumanProfilePage() {
         title="Anjuman profile"
         description="This information appears on receipts, ID cards, notices and the member app."
         actions={
-          <Button onClick={() => toast("Profile saved")}>
+          <Button onClick={handleSave} loading={saving}>
             <Save className="h-4 w-4" /> Save changes
           </Button>
         }
       />
+
+      {error && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-[12.5px] text-red-700">
+          <span className="mt-0.5">⚠</span>
+          <span className="flex-1">{error}</span>
+        </div>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-3">
         <div className="space-y-5 xl:col-span-2">
@@ -47,33 +153,38 @@ export default function AnjumanProfilePage() {
             <CardHeader title="Identity" subtitle="Legal name and registration" />
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <Field label="Anjuman / committee name" className="sm:col-span-2">
-                <Input defaultValue={activeTenant.name} />
+                <Input value={t.name} onChange={(e) => setTenant({ ...t, name: e.target.value })} />
               </Field>
               <Field label="Masjid name">
-                <Input defaultValue={activeTenant.masjid} />
+                <Input value={t.masjid} onChange={(e) => setTenant({ ...t, masjid: e.target.value })} />
               </Field>
               <Field label="Registration number">
-                <Input value={regNo} onChange={(e) => setRegNo(e.target.value)} />
+                <Input value={t.regNo} onChange={(e) => setTenant({ ...t, regNo: e.target.value })} />
               </Field>
               <Field label="Village / town">
-                <Input defaultValue={activeTenant.village} />
+                <Input value={t.village} onChange={(e) => setTenant({ ...t, village: e.target.value })} />
               </Field>
               <Field label="District">
-                <Input defaultValue={activeTenant.district} />
+                <Input value={t.district} onChange={(e) => setTenant({ ...t, district: e.target.value })} />
               </Field>
               <Field label="State">
-                <Select defaultValue={activeTenant.state}>
-                  <option>Uttar Pradesh</option>
-                  <option>Bihar</option>
-                  <option>West Bengal</option>
-                  <option>Maharashtra</option>
-                  <option>Karnataka</option>
-                  <option>Telangana</option>
-                  <option>Other</option>
+                <Select
+                  value={t.state}
+                  onChange={(e) => setTenant({ ...t, state: e.target.value })}
+                >
+                  {STATES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
                 </Select>
               </Field>
               <Field label="PIN code">
-                <Input defaultValue={activeTenant.pincode} inputMode="numeric" />
+                <Input
+                  value={t.pincode}
+                  onChange={(e) => setTenant({ ...t, pincode: e.target.value })}
+                  inputMode="numeric"
+                />
               </Field>
             </div>
           </Card>
@@ -82,13 +193,21 @@ export default function AnjumanProfilePage() {
             <CardHeader title="Contact" subtitle="Shown to members for queries" />
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <Field label="Committee phone">
-                <Input defaultValue={activeTenant.phone} />
+                <Input value={t.phone} onChange={(e) => setTenant({ ...t, phone: e.target.value })} />
               </Field>
               <Field label="WhatsApp number">
-                <Input defaultValue={activeTenant.phone} />
+                <Input
+                  value={t.phone}
+                  onChange={(e) => setTenant({ ...t, phone: e.target.value })}
+                  placeholder="Same as committee phone"
+                />
               </Field>
               <Field label="Email">
-                <Input type="email" defaultValue="office@bharaulimasjid.in" />
+                <Input
+                  type="email"
+                  value={t.email ?? ""}
+                  onChange={(e) => setTenant({ ...t, email: e.target.value })}
+                />
               </Field>
               <Field label="Website (optional)">
                 <Input placeholder="https://…" />
@@ -96,7 +215,8 @@ export default function AnjumanProfilePage() {
               <Field label="Full address" className="sm:col-span-2">
                 <textarea
                   className="input min-h-[80px] resize-y"
-                  defaultValue={`${activeTenant.masjid}, ${activeTenant.village}, ${activeTenant.district}, ${activeTenant.state} — ${activeTenant.pincode}`}
+                  value={t.address ?? ""}
+                  onChange={(e) => setTenant({ ...t, address: e.target.value })}
                 />
               </Field>
             </div>
@@ -120,16 +240,24 @@ export default function AnjumanProfilePage() {
                 </div>
               </div>
               <Field label="Member ID prefix" hint="Used for every member ID, e.g. BHR-000123-7">
-                <Input defaultValue={activeTenant.code} maxLength={4} className="font-mono uppercase" />
+                <Input
+                  value={t.code}
+                  maxLength={4}
+                  className="font-mono uppercase"
+                  disabled
+                  title="Prefix cannot be changed after creation"
+                />
               </Field>
               <Field label="Theme colour">
                 <div className="flex gap-2">
-                  {["#059669", "#0ea5e9", "#7c3aed", "#d97706", "#dc2626"].map((c) => (
+                  {THEME_COLORS.map((c) => (
                     <button
                       key={c}
-                      className="h-10 w-10 rounded-xl ring-2 ring-white ring-offset-2 ring-offset-ink-100"
+                      className={`h-10 w-10 rounded-xl ring-2 ring-white ring-offset-2 ring-offset-ink-100 ${
+                        t.themeColor === c ? "ring-brand-600 ring-offset-2" : ""
+                      }`}
                       style={{ background: c }}
-                      onClick={() => toast("Theme colour updated")}
+                      onClick={() => setTenant({ ...t, themeColor: c })}
                       aria-label={`Theme ${c}`}
                     />
                   ))}
@@ -144,22 +272,22 @@ export default function AnjumanProfilePage() {
             <div className="bg-ink-900 p-5 text-white">
               <div className="flex items-center gap-2.5">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-sm font-bold">
-                  {activeTenant.code}
+                  {t.code}
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate text-[13px] font-semibold">{activeTenant.name}</p>
+                  <p className="truncate text-[13px] font-semibold">{t.name}</p>
                   <p className="text-[11px] text-ink-400">Verified anjuman</p>
                 </div>
               </div>
               <div className="mt-4 space-y-1.5 text-[11.5px] text-ink-300">
                 <p className="flex items-center gap-1.5">
-                  <MapPin className="h-3 w-3" /> {activeTenant.village}, {activeTenant.district}
+                  <MapPin className="h-3 w-3" /> {t.village}, {t.district}
                 </p>
                 <p className="flex items-center gap-1.5">
-                  <Phone className="h-3 w-3" /> {activeTenant.phone}
+                  <Phone className="h-3 w-3" /> {t.phone}
                 </p>
                 <p className="flex items-center gap-1.5">
-                  <ShieldCheck className="h-3 w-3" /> Reg {regNo}
+                  <ShieldCheck className="h-3 w-3" /> Reg {t.regNo}
                 </p>
               </div>
             </div>
@@ -168,13 +296,16 @@ export default function AnjumanProfilePage() {
                 <span className="text-ink-500">Public link</span>
                 <button
                   className="inline-flex items-center gap-1 font-medium text-brand-700"
-                  onClick={() => toast("Link copied")}
+                  onClick={() => {
+                    navigator.clipboard.writeText(`anjuman.app/${t.code.toLowerCase()}`);
+                    toast("Link copied");
+                  }}
                 >
                   <Copy className="h-3 w-3" /> Copy
                 </button>
               </div>
               <p className="mt-1 truncate rounded-lg bg-ink-50 px-2.5 py-1.5 font-mono text-[11px] text-ink-600">
-                anjuman.app/bharauli
+                anjuman.app/{t.code.toLowerCase()}
               </p>
             </div>
           </Card>
@@ -182,18 +313,13 @@ export default function AnjumanProfilePage() {
           <Card>
             <CardHeader title="Verification" subtitle="Required for the verified badge" />
             <div className="space-y-3 p-5 text-[12px]">
-              {[
-                { label: "Phone verified", done: true },
-                { label: "Registration certificate", done: true },
-                { label: "Bank account verified", done: true },
-                { label: "PAN / trust deed", done: false },
-              ].map((v) => (
-                <div key={v.label} className="flex items-center justify-between">
+              {VERIFICATION_ITEMS.map((v) => (
+                <div key={v.key} className="flex items-center justify-between">
                   <span className="text-ink-600">{v.label}</span>
-                  {v.done ? (
+                  {verification[v.key] ? (
                     <Badge tone="green" dot>Done</Badge>
                   ) : (
-                    <Button variant="ghost" size="sm" onClick={() => toast("Upload requested")}>
+                    <Button variant="ghost" size="sm" onClick={() => setVerification((prev) => ({ ...prev, [v.key]: true }))}>
                       Upload
                     </Button>
                   )}

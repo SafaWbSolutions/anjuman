@@ -31,7 +31,11 @@ export interface Tenant {
   masjid: string;
   regNo: string;
   phone: string;
+  email?: string;
   upiId: string;
+  address?: string;
+  logoUrl?: string;
+  themeColor?: string;
   status: TenantStatus;
   planType: PlanType;
   planAmountPaise: number;

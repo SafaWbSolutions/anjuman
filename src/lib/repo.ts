@@ -635,6 +635,50 @@ export async function saveTenantSettings(patch: Partial<TenantSettings>): Promis
   if (error) throw error;
 }
 
+export interface TenantProfilePatch {
+  name?: string;
+  masjid?: string;
+  village?: string;
+  district?: string;
+  state?: string;
+  pincode?: string;
+  phone?: string;
+  email?: string;
+  regNo?: string;
+  upiId?: string;
+  address?: string;
+  logoUrl?: string;
+  themeColor?: string;
+}
+
+/** Update the tenant profile (sadar/secretary only). */
+export async function saveTenantProfile(patch: TenantProfilePatch): Promise<void> {
+  if (isDemoMode) return;
+
+  const row: Row = {};
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.masjid !== undefined) row.masjid = patch.masjid;
+  if (patch.village !== undefined) row.village = patch.village;
+  if (patch.district !== undefined) row.district = patch.district;
+  if (patch.state !== undefined) row.state = patch.state;
+  if (patch.pincode !== undefined) row.pincode = patch.pincode;
+  if (patch.phone !== undefined) row.phone = patch.phone;
+  if (patch.email !== undefined) row.email = patch.email;
+  if (patch.regNo !== undefined) row.reg_no = patch.regNo;
+  if (patch.upiId !== undefined) row.upi_id = patch.upiId;
+  if (patch.address !== undefined) row.address = patch.address;
+  if (patch.logoUrl !== undefined) row.logo_url = patch.logoUrl;
+  if (patch.themeColor !== undefined) row.theme_color = patch.themeColor;
+
+  if (Object.keys(row).length === 0) return;
+
+  const { error } = await client()
+    .from("tenants")
+    .update(row)
+    .eq("id", await myTenantId());
+  if (error) throw error;
+}
+
 /** Masjid coordinates, used by the calculated prayer timetable. */
 export async function saveTenantLocation(input: {
   latitude: number | null;

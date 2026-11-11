@@ -348,7 +348,7 @@ export default function MembersPage() {
             </thead>
             <tbody className="divide-y divide-ink-100">
               {filtered.map((m) => {
-                const due = dueTotalOf(m.id);
+                const due = m.status === "active" ? dueTotalOf(m.id) : 0;
                 return (
                   <tr
                     key={m.id}

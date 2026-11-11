@@ -132,6 +132,11 @@ export function FinanceOverview({
     [members]
   );
 
+  const activeMembers = useMemo(
+    () => members.filter((m) => m.status === "active"),
+    [members]
+  );
+
   const rangePayments = useMemo(
     () => payments.filter((p) => p.status === "verified" && inRange(p.createdAt)),
     [payments, inRange]
@@ -177,7 +182,8 @@ export function FinanceOverview({
     .filter(
       (i) =>
         (i.status === "pending" || i.status === "partial") &&
-        periodInRange(i.period)
+        periodInRange(i.period) &&
+        memberMap.get(i.memberId)?.status === "active"
     )
     .reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0);
 
@@ -349,7 +355,7 @@ export function FinanceOverview({
         title: "Member-wise dues",
         subtitle: label,
         headers: ["Member", "Code", "Paid", "Outstanding", "Since", "Last payment"],
-        rows: members.map((m) => {
+        rows: activeMembers.map((m) => {
           const mine = invoices.filter((i) => i.memberId === m.id);
           const paid = mine.reduce((s, i) => s + i.paidPaise, 0);
           const due = mine
@@ -389,11 +395,18 @@ export function FinanceOverview({
         rows: members.map((m) => {
           const mine = invoices.filter((i) => i.memberId === m.id);
           const paid = mine.reduce((s, i) => s + i.paidPaise, 0);
-          const due = mine
-            .filter((i) => i.status === "pending" || i.status === "partial")
-            .reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0);
+          const due =
+            m.status === "active"
+              ? mine
+                  .filter((i) => i.status === "pending" || i.status === "partial")
+                  .reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0)
+              : 0;
           const firstUnpaid = mine
-            .filter((i) => i.status === "pending" || i.status === "partial")
+            .filter(
+              (i) =>
+                m.status === "active" &&
+                (i.status === "pending" || i.status === "partial")
+            )
             .sort((a, b) => a.period.localeCompare(b.period))[0];
           return [
             m.name,

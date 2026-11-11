@@ -53,11 +53,12 @@ const ROLE_CARDS: {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user, ready, demoMode, signIn, mfaPending, verifyMfa, cancelMfa } = useAuth();
+  const { user, ready, demoMode, signIn, mfaPending, verifyMfa, cancelMfa, emailOtp, verifyEmailOtp, cancelEmailOtp } = useAuth();
   const [busy, setBusy] = useState<Role | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
+  const [otp, setOtp] = useState("");
   const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
@@ -68,7 +69,7 @@ export default function LoginPage() {
     setBusy(role);
     try {
       const result = await signIn(role);
-      if (!result.mfaRequired) router.replace("/dashboard/");
+      if (result.step === "done") router.replace("/dashboard/");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Sign in failed", "error");
       setBusy(null);
@@ -80,7 +81,7 @@ export default function LoginPage() {
     setBusy("member");
     try {
       const result = await signIn("member", email, password);
-      if (!result.mfaRequired) router.replace("/dashboard/");
+      if (result.step === "done") router.replace("/dashboard/");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Sign in failed", "error");
       setBusy(null);
@@ -100,6 +101,24 @@ export default function LoginPage() {
     } catch (err) {
       toast(err instanceof Error ? err.message : "Code galat hai", "error");
       setCode("");
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function submitEmailCode(e: React.FormEvent) {
+    e.preventDefault();
+    if (otp.trim().length < 6) {
+      toast("Email me aaya code daalo", "error");
+      return;
+    }
+    setVerifying(true);
+    try {
+      await verifyEmailOtp(otp);
+      router.replace("/dashboard/");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Code galat ya expire ho gaya", "error");
+      setOtp("");
     } finally {
       setVerifying(false);
     }
@@ -242,6 +261,43 @@ export default function LoginPage() {
                 Nothing you enter is saved to a server.
               </p>
             </>
+          ) : emailOtp ? (
+            <form onSubmit={submitEmailCode} className="mt-6 space-y-4">
+              <div className="flex items-start gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-3.5">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-brand-600" />
+                <p className="text-[12.5px] leading-relaxed text-brand-900">
+                  <span className="font-semibold">Naya device — email verify karo</span>
+                  <br />
+                  <b>{emailOtp.email}</b> par verification bheja hai. Email me 6-digit
+                  code daalo, ya usi device par email ka link kholo.
+                </p>
+              </div>
+              <div>
+                <label className="label">Email verification code</label>
+                <Input
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                  placeholder="123456"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  className="text-center font-mono text-xl tracking-[0.4em]"
+                  autoFocus
+                />
+              </div>
+              <Button type="submit" size="lg" className="w-full" loading={verifying}>
+                Verify device &amp; continue
+              </Button>
+              <p className="text-center text-[11.5px] leading-relaxed text-ink-500">
+                Email nahi aaya? Spam folder dekho, ya 1 minute baad dobara login karo.
+              </p>
+              <button
+                type="button"
+                onClick={() => void cancelEmailOtp()}
+                className="w-full text-center text-[12.5px] text-ink-500 hover:text-ink-700"
+              >
+                Cancel — use another account
+              </button>
+            </form>
           ) : mfaPending ? (
             <form onSubmit={submitCode} className="mt-6 space-y-4">
               <div className="flex items-start gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-3.5">

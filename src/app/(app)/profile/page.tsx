@@ -351,8 +351,8 @@ export default function MyProfilePage() {
         {!isDemoMode && (
           <Card className="lg:col-span-3">
             <CardHeader
-              title="Two-factor authentication (2FA)"
-              subtitle="Payment verify / approve karne ke liye mandatory — Google Authenticator ya Authy use karo"
+              title="Authenticator app (optional)"
+              subtitle="Email verification har naye device par already chalti hai — ye extra lock hai"
               action={
                 factorId ? (
                   <Badge tone="green">2FA ON</Badge>
@@ -428,9 +428,9 @@ export default function MyProfilePage() {
                   <div className="flex items-start gap-3 sm:col-span-2">
                     <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
                     <p className="text-[12.5px] leading-relaxed text-ink-600">
-                      <b>2FA abhi off hai.</b> Sirf password se account access ho sakta
-                      hai — isliye payment verify, expense approve aur approval decide
-                      block rehte hain. Abhi enable karo (2 minute).
+                      <b>Authenticator abhi off hai.</b> Ye zaroori nahi — naye device
+                      par login ke waqt email verification hoti hai. Agar extra security
+                      chahiye to yahan 2 minute me enable kar sakte ho.
                     </p>
                   </div>
                   <div className="sm:col-span-2">

@@ -87,10 +87,17 @@ interface AuthState {
   user: SessionUser | null;
   ready: boolean;
   demoMode: boolean;
-  signIn: (role: Role, email?: string, password?: string) => Promise<{ mfaRequired: boolean }>;
+  signIn: (
+    role: Role,
+    email?: string,
+    password?: string
+  ) => Promise<{ step: "done" | "totp" | "email" }>;
   verifyMfa: (code: string) => Promise<void>;
   cancelMfa: () => Promise<void>;
   mfaPending: { role: Role; factorId: string } | null;
+  emailOtp: { email: string; role: Role } | null;
+  verifyEmailOtp: (token: string) => Promise<void>;
+  cancelEmailOtp: () => Promise<void>;
   signOut: () => Promise<void>;
   switchRole: (role: Role) => void;
   refreshUser: () => Promise<void>;
@@ -105,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [mfaPending, setMfaPending] = useState<{ role: Role; factorId: string } | null>(null);
+  const [emailOtp, setEmailOtp] = useState<{ email: string; role: Role } | null>(null);
   const demoMode = isDemoMode;
 
   /** Returns the pending 2FA challenge when this role still owes a TOTP step. */
@@ -157,6 +165,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const sessionUser = await loadSessionUser(data.session.user.id);
           if (sessionUser && !cancelled) {
             sessionUser.email = data.session.user.email ?? sessionUser.email;
+            try {
+              window.localStorage.setItem(`anjuman.device.${sessionUser.id}`, "1");
+            } catch {
+              /* private mode */
+            }
             const pending = await checkMfa(sessionUser.role);
             if (pending) {
               setMfaPending(pending);
@@ -197,7 +210,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (demoMode) {
         const base = DEMO_USERS[role];
         persist(email ? { ...base, email } : base);
-        return { mfaRequired: false };
+        return { step: "done" as const };
       }
       if (!supabase) throw new Error("Supabase is not configured");
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -216,17 +229,74 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       sessionUser.email = data.user.email ?? sessionUser.email;
 
+      // 1) Authenticator app, if this user chose to enroll it.
       const pending = await checkMfa(sessionUser.role);
       if (pending) {
         setMfaPending(pending);
-        return { mfaRequired: true };
+        return { step: "totp" as const };
+      }
+
+      // 2) Office roles on an unrecognised device must prove control of
+      //    the email once. The same device stays trusted after that.
+      const deviceKey = `anjuman.device.${data.user.id}`;
+      let trusted = false;
+      try {
+        trusted = window.localStorage.getItem(deviceKey) === "1";
+      } catch {
+        trusted = false;
+      }
+
+      if (MFA_ROLES.includes(sessionUser.role) && !trusted) {
+        const userEmail = data.user.email ?? email ?? "";
+        await supabase.auth.signOut();
+        const sent = await supabase.auth.signInWithOtp({
+          email: userEmail,
+          options: {
+            shouldCreateUser: false,
+            emailRedirectTo: `${window.location.origin}/login/`,
+          },
+        });
+        if (sent.error) throw sent.error;
+        setEmailOtp({ email: userEmail, role: sessionUser.role });
+        return { step: "email" as const };
       }
 
       setUser(sessionUser);
-      return { mfaRequired: false };
+      return { step: "done" as const };
     },
     [demoMode, checkMfa]
   );
+
+  const verifyEmailOtp = useCallback(
+    async (token: string) => {
+      if (!supabase || !emailOtp) throw new Error("Verification session nahi mila — dobara login karein");
+      const { error } = await supabase.auth.verifyOtp({
+        email: emailOtp.email,
+        token: token.trim(),
+        type: "email",
+      });
+      if (error) throw error;
+
+      const { data } = await supabase.auth.getSession();
+      if (!data.session?.user) throw new Error("Session expire ho gaya — dobara login karein");
+      const sessionUser = await loadSessionUser(data.session.user.id);
+      if (!sessionUser) throw new Error("Profile nahi mila");
+      sessionUser.email = data.session.user.email ?? sessionUser.email;
+      try {
+        window.localStorage.setItem(`anjuman.device.${sessionUser.id}`, "1");
+      } catch {
+        /* private mode */
+      }
+      setUser(sessionUser);
+      setEmailOtp(null);
+    },
+    [emailOtp]
+  );
+
+  const cancelEmailOtp = useCallback(async () => {
+    if (supabase && !demoMode) await supabase.auth.signOut();
+    setEmailOtp(null);
+  }, [demoMode]);
 
   const verifyMfa = useCallback(async (code: string) => {
     if (!supabase || !mfaPending) throw new Error("2FA session nahi mila — dobara login karein");
@@ -244,6 +314,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const sessionUser = await loadSessionUser(data.session.user.id);
     if (!sessionUser) throw new Error("Profile nahi mila");
     sessionUser.email = data.session.user.email ?? sessionUser.email;
+    try {
+      window.localStorage.setItem(`anjuman.device.${sessionUser.id}`, "1");
+    } catch {
+      /* private mode */
+    }
     setUser(sessionUser);
     setMfaPending(null);
   }, [mfaPending]);
@@ -256,6 +331,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     if (supabase && !demoMode) await supabase.auth.signOut();
     setMfaPending(null);
+    setEmailOtp(null);
     persist(null);
   }, [demoMode, persist]);
 
@@ -296,6 +372,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       verifyMfa,
       cancelMfa,
       mfaPending,
+      emailOtp,
+      verifyEmailOtp,
+      cancelEmailOtp,
       signOut,
       switchRole,
       refreshUser,
@@ -310,6 +389,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       verifyMfa,
       cancelMfa,
       mfaPending,
+      emailOtp,
+      verifyEmailOtp,
+      cancelEmailOtp,
       signOut,
       switchRole,
       refreshUser,

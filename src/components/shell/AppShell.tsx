@@ -11,7 +11,6 @@ import {
   LogOut,
   Menu,
   Search,
-  ShieldAlert,
   Sparkles,
   X,
   type LucideIcon,
@@ -19,8 +18,7 @@ import {
 import * as Icons from "lucide-react";
 import { useAuth, roleLabel } from "@/lib/auth";
 import { navForRole } from "@/lib/nav";
-import { MFA_ROLES, ROLE_LABEL, type Role } from "@/lib/types";
-import { isDemoMode, supabase } from "@/lib/supabase";
+import { ROLE_LABEL, type Role } from "@/lib/types";
 import { cn, ensurePrintRoot } from "@/lib/utils";
 import { members, complaints, approvals } from "@/lib/mock";
 import { Avatar, Badge, Toaster } from "@/components/ui";
@@ -34,7 +32,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [mfaOff, setMfaOff] = useState(false);
 
   useEffect(() => {
     if (ready && !user) router.replace("/login/");
@@ -62,24 +59,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.addEventListener("beforeprint", onBeforePrint);
     return () => window.removeEventListener("beforeprint", onBeforePrint);
   }, []);
-
-  useEffect(() => {
-    if (!user || isDemoMode || !supabase || !MFA_ROLES.includes(user.role)) {
-      setMfaOff(false);
-      return;
-    }
-    let alive = true;
-    supabase.auth.mfa
-      .listFactors()
-      .then(({ data }) => {
-        if (!alive) return;
-        setMfaOff(!data?.totp?.some((f) => f.status === "verified"));
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [user?.id, user?.role]);
 
   if (!ready || !user) {
     return (
@@ -231,22 +210,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">
-          {mfaOff && (
-            <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12.5px] text-amber-900">
-              <ShieldAlert className="h-4 w-4 shrink-0" />
-              <p className="flex-1">
-                <b>2FA band hai.</b> Payment verify, expense approve aur approval
-                decide tab tak block rahenge jab tak authenticator app connect nahi
-                hota.
-              </p>
-              <Link
-                href="/profile/"
-                className="rounded-lg bg-amber-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-amber-700"
-              >
-                Enable 2FA
-              </Link>
-            </div>
-          )}
           {children}
         </main>
       </div>

@@ -1978,6 +1978,44 @@ function toInvitation(r: Row): Invitation {
   };
 }
 
+/** Create (or reset) a login for a member or office bearer via Edge Function. */
+export async function createMemberLogin(input: {
+  memberId?: string | null;
+  email: string;
+  password: string;
+  fullName?: string;
+  phone?: string;
+  role?: Role;
+}): Promise<{ email: string }> {
+  if (isDemoMode) return { email: input.email };
+
+  const { data, error } = await client().functions.invoke("admin-create-user", {
+    body: {
+      member_id: input.memberId ?? null,
+      email: input.email.trim().toLowerCase(),
+      password: input.password,
+      full_name: input.fullName ?? "",
+      phone: input.phone ?? "",
+      role: input.role ?? "member",
+    },
+  });
+
+  if (error) {
+    let message = error.message;
+    try {
+      const ctx = (error as unknown as { context?: Response }).context;
+      const body = ctx ? await ctx.json() : null;
+      if (body?.error) message = String(body.error);
+    } catch {
+      /* keep the generic message */
+    }
+    throw new Error(message);
+  }
+
+  if (!data?.ok) throw new Error(data?.error ?? "Login create nahi hua");
+  return { email: String(data.email) };
+}
+
 export interface NewMember {
   name: string;
   fatherName?: string;

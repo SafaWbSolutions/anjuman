@@ -20,6 +20,7 @@ import { activeTenant } from "@/lib/mock";
 import type { Invoice, Member, Payment, Tenant } from "@/lib/types";
 import {
   createMember,
+  createMemberLogin,
   generateInvoices,
   getCurrentTenant,
   listInvoices,
@@ -64,6 +65,7 @@ export default function MembersPage() {
   const [type, setType] = useState("all");
   const [selected, setSelected] = useState<Member | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [loginMember, setLoginMember] = useState<Member | null>(null);
 
   const [members, setMembers] = useState<Member[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -393,7 +395,9 @@ export default function MembersPage() {
         payments={payments}
         tenantName={tenantName}
         onClose={() => setSelected(null)}
+        onCreateLogin={(m) => setLoginMember(m)}
       />
+      <CreateLoginDrawer member={loginMember} onClose={() => setLoginMember(null)} />
       <AddMemberDrawer
         open={addOpen}
         mohallas={mohallas}
@@ -409,6 +413,101 @@ export default function MembersPage() {
   );
 }
 
+/* ── Create login drawer ──────────────────────────────────────── */
+
+function randomPassword() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function CreateLoginDrawer({
+  member,
+  onClose,
+}: {
+  member: Member | null;
+  onClose: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState(randomPassword());
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (member) {
+      setPassword(randomPassword());
+      setEmail("");
+    }
+  }, [member?.id]);
+
+  if (!member) return null;
+
+  async function submit() {
+    if (!member) return;
+    if (!/^.+@.+\..+$/.test(email.trim())) {
+      toast("Valid email daalo", "error");
+      return;
+    }
+    if (password.length < 6) {
+      toast("Password kam se kam 6 characters", "error");
+      return;
+    }
+    setSaving(true);
+    try {
+      await createMemberLogin({
+        memberId: member.id,
+        email: email.trim(),
+        password,
+        fullName: member.name,
+        phone: member.phone,
+        role: "member",
+      });
+      toast(`Login ban gaya — ${email.trim()} / ${password}`);
+      onClose();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Login create nahi hua", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Drawer
+      open={!!member}
+      onClose={onClose}
+      title="Create member login"
+      subtitle={`${member.name} · ${member.code}`}
+      width="max-w-md"
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={submit} loading={saving}>
+            <UserPlus className="h-4 w-4" /> Create login
+          </Button>
+        </div>
+      }
+    >
+      <div className="grid gap-4">
+        <Field label="Email" hint="Member isi email se login karega.">
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="member@example.com"
+            autoComplete="off"
+          />
+        </Field>
+        <Field label="Password" hint="Phone par bhej do — member baad me badal sakta hai.">
+          <Input value={password} onChange={(e) => setPassword(e.target.value)} className="font-mono" />
+        </Field>
+        <p className="text-[11.5px] leading-relaxed text-ink-500">
+          Login ban ne ke baad member <b>anjuman.pages.dev/login</b> par email + password
+          se sign in karega aur sirf apna dashboard + ID card dekhega.
+        </p>
+      </div>
+    </Drawer>
+  );
+}
+
 /* ── Member detail drawer ─────────────────────────────────────── */
 
 function MemberDrawer({
@@ -417,12 +516,14 @@ function MemberDrawer({
   payments,
   tenantName,
   onClose,
+  onCreateLogin,
 }: {
   member: Member | null;
   invoices: Invoice[];
   payments: Payment[];
   tenantName: string;
   onClose: () => void;
+  onCreateLogin: (member: Member) => void;
 }) {
   if (!member) return null;
 
@@ -451,6 +552,9 @@ function MemberDrawer({
             <span className="font-medium text-ink-700">{tenantName}</span>
           </p>
           <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={() => onCreateLogin(member)}>
+              <UserPlus className="h-3.5 w-3.5" /> Create login
+            </Button>
             <Button
               variant="secondary"
               size="sm"

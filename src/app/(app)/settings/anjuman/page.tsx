@@ -12,7 +12,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import type { Tenant } from "@/lib/types";
-import { getCurrentTenant, saveTenantProfile } from "@/lib/repo";
+import { getCurrentTenant, saveTenantProfile, setMemberPrefix } from "@/lib/repo";
 import {
   Badge,
   Button,
@@ -27,12 +27,42 @@ import {
 } from "@/components/ui";
 
 const STATES = [
-  "Uttar Pradesh",
+  "Andhra Pradesh",
+  "Arunachal Pradesh",
+  "Assam",
   "Bihar",
-  "West Bengal",
-  "Maharashtra",
+  "Chhattisgarh",
+  "Goa",
+  "Gujarat",
+  "Haryana",
+  "Himachal Pradesh",
+  "Jharkhand",
   "Karnataka",
+  "Kerala",
+  "Madhya Pradesh",
+  "Maharashtra",
+  "Manipur",
+  "Meghalaya",
+  "Mizoram",
+  "Nagaland",
+  "Odisha",
+  "Punjab",
+  "Rajasthan",
+  "Sikkim",
+  "Tamil Nadu",
   "Telangana",
+  "Tripura",
+  "Uttar Pradesh",
+  "Uttarakhand",
+  "West Bengal",
+  "Andaman and Nicobar Islands",
+  "Chandigarh",
+  "Dadra and Nagar Haveli and Daman and Diu",
+  "Delhi",
+  "Jammu and Kashmir",
+  "Ladakh",
+  "Lakshadweep",
+  "Puducherry",
   "Other",
 ] as const;
 
@@ -50,6 +80,7 @@ export default function AnjumanProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customState, setCustomState] = useState("");
   const [verification, setVerification] = useState<Record<string, boolean>>({
     phoneVerified: true,
     regCert: true,
@@ -62,7 +93,11 @@ export default function AnjumanProfilePage() {
     let mounted = true;
     getCurrentTenant()
       .then((t) => {
-        if (mounted) setTenant(t);
+        if (!mounted) return;
+        setTenant(t);
+        if (t && t.state && !(STATES as readonly string[]).includes(t.state)) {
+          setCustomState(t.state);
+        }
       })
       .catch((e) => {
         if (mounted) setError(e instanceof Error ? e.message : "Profile load nahi hua");
@@ -80,12 +115,21 @@ export default function AnjumanProfilePage() {
     setSaving(true);
     setError(null);
     try {
+      const finalState =
+        tenant.state === "Other" ? customState.trim() : tenant.state;
+
+      if (!finalState) {
+        throw new Error("State ka naam likho");
+      }
+
+      const prefix = await setMemberPrefix(tenant.code);
+
       await saveTenantProfile({
         name: tenant.name,
         masjid: tenant.masjid,
         village: tenant.village,
         district: tenant.district,
-        state: tenant.state,
+        state: finalState,
         pincode: tenant.pincode,
         phone: tenant.phone,
         email: tenant.email ?? "",
@@ -95,10 +139,16 @@ export default function AnjumanProfilePage() {
         logoUrl: tenant.logoUrl,
         themeColor: tenant.themeColor,
       });
+
+      setTenant({ ...tenant, code: prefix, state: finalState });
+      setCustomState(
+        (STATES as readonly string[]).includes(finalState) ? "" : finalState
+      );
       toast("Profile saved");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
-      toast(e instanceof Error ? e.message : "Save failed", "error");
+      const message = e instanceof Error ? e.message : "Save failed";
+      setError(message);
+      toast(message, "error");
     } finally {
       setSaving(false);
     }
@@ -170,7 +220,11 @@ export default function AnjumanProfilePage() {
               </Field>
               <Field label="State">
                 <Select
-                  value={t.state}
+                  value={
+                    (STATES as readonly string[]).includes(t.state)
+                      ? t.state
+                      : "Other"
+                  }
                   onChange={(e) => setTenant({ ...t, state: e.target.value })}
                 >
                   {STATES.map((s) => (
@@ -180,6 +234,16 @@ export default function AnjumanProfilePage() {
                   ))}
                 </Select>
               </Field>
+              {!(STATES as readonly string[]).includes(t.state) ||
+              t.state === "Other" ? (
+                <Field label="State name (custom)" hint="Apna state / region likho">
+                  <Input
+                    value={customState}
+                    onChange={(e) => setCustomState(e.target.value)}
+                    placeholder="e.g. Bihar"
+                  />
+                </Field>
+              ) : null}
               <Field label="PIN code">
                 <Input
                   value={t.pincode}
@@ -243,13 +307,21 @@ export default function AnjumanProfilePage() {
                   <span className="text-[11.5px]">Shown on the home screen</span>
                 </div>
               </div>
-              <Field label="Member ID prefix" hint="Used for every member ID, e.g. BHR-000123-7">
+              <Field
+                label="Member ID prefix"
+                hint="2–4 letters. Naye members ke ID par lagega; purane ID waise hi rahenge."
+              >
                 <Input
                   value={t.code}
                   maxLength={4}
                   className="font-mono uppercase"
-                  disabled
-                  title="Prefix cannot be changed after creation"
+                  onChange={(e) =>
+                    setTenant({
+                      ...t,
+                      code: e.target.value.toUpperCase().replace(/[^A-Z]/g, ""),
+                    })
+                  }
+                  placeholder="BHR"
                 />
               </Field>
               <Field label="Theme colour">

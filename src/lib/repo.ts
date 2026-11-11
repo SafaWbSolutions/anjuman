@@ -650,6 +650,17 @@ export async function saveTenantSettings(patch: Partial<TenantSettings>): Promis
   if (error) throw error;
 }
 
+/** Change the member ID prefix (tenant code). Existing codes stay as-is. */
+export async function setMemberPrefix(prefix: string): Promise<string> {
+  if (isDemoMode) return prefix.toUpperCase();
+
+  const { data, error } = await client().rpc("set_member_prefix", {
+    p_prefix: prefix,
+  });
+  if (error) throw error;
+  return String(data);
+}
+
 /**
  * From which month does chanda counting start (e.g. 2024-11 for
  * two years back) and on which day of the month is it due.

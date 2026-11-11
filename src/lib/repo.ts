@@ -863,21 +863,22 @@ export interface StaffMember {
   id: string;
   name: string;
   role: string;
+  active: boolean;
 }
 
 /** Office bearers of this tenant, for assigning complaints. */
 export async function listStaff(): Promise<StaffMember[]> {
   if (isDemoMode) {
     return [
-      { id: "u-sadar", name: "Sadar Muhammad Yusuf", role: "sadar" },
-      { id: "u-khaj", name: "Khajanchi Abdul Karim", role: "khajanchi" },
-      { id: "u-sec", name: "Secretary Nadeem Ahmad", role: "secretary" },
+      { id: "u-sadar", name: "Sadar Muhammad Yusuf", role: "sadar", active: true },
+      { id: "u-khaj", name: "Khajanchi Abdul Karim", role: "khajanchi", active: true },
+      { id: "u-sec", name: "Secretary Nadeem Ahmad", role: "secretary", active: true },
     ];
   }
 
   const { data, error } = await client()
     .from("profiles")
-    .select("id, full_name, role")
+    .select("id, full_name, role, is_active")
     .eq("tenant_id", await myTenantId())
     .in("role", ["sadar", "secretary", "khajanchi", "auditor", "collector"])
     .order("role", { ascending: true });
@@ -887,7 +888,32 @@ export async function listStaff(): Promise<StaffMember[]> {
     id: p.id,
     name: p.full_name ?? "Office bearer",
     role: p.role,
+    active: p.is_active ?? true,
   }));
+}
+
+/** Update a staff member's role (sadar/secretary only). */
+export async function updateStaffRole(userId: string, role: string): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client()
+    .from("profiles")
+    .update({ role })
+    .eq("id", userId)
+    .eq("tenant_id", await myTenantId());
+  if (error) throw error;
+}
+
+/** Enable/disable a staff member's access (sadar/secretary only). */
+export async function updateStaffActive(userId: string, active: boolean): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client()
+    .from("profiles")
+    .update({ is_active: active })
+    .eq("id", userId)
+    .eq("tenant_id", await myTenantId());
+  if (error) throw error;
 }
 
 export async function listComplaints(): Promise<Complaint[]> {

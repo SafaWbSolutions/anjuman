@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Check,
   KeyRound,
@@ -10,6 +10,9 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
+import type { Role } from "@/lib/types";
+import type { StaffMember } from "@/lib/repo";
+import { listStaff, updateStaffRole, updateStaffActive } from "@/lib/repo";
 import {
   Avatar,
   Badge,
@@ -24,28 +27,7 @@ import {
   Switch,
   toast,
 } from "@/components/ui";
-import { ROLE_LABEL, type Role } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-interface StaffUser {
-  id: string;
-  name: string;
-  phone: string;
-  email: string;
-  role: Role;
-  active: boolean;
-  twoFA: boolean;
-  lastSeen: string;
-}
-
-const USERS: StaffUser[] = [
-  { id: "u1", name: "Muhammad Yusuf", phone: "+91 98765 43210", email: "sadar@bharauli.in", role: "sadar", active: true, twoFA: true, lastSeen: "2 min ago" },
-  { id: "u2", name: "Abdul Karim", phone: "+91 98765 43211", email: "khajanchi@bharauli.in", role: "khajanchi", active: true, twoFA: true, lastSeen: "1 hour ago" },
-  { id: "u3", name: "Nadeem Ahmad", phone: "+91 98765 43212", email: "secretary@bharauli.in", role: "secretary", active: true, twoFA: false, lastSeen: "Yesterday" },
-  { id: "u4", name: "Haji Ashraf Ali", phone: "+91 98765 43213", email: "auditor@bharauli.in", role: "auditor", active: true, twoFA: true, lastSeen: "3 days ago" },
-  { id: "u5", name: "Imran Qureshi", phone: "+91 98765 43214", email: "collector@bharauli.in", role: "collector", active: true, twoFA: false, lastSeen: "4 hours ago" },
-  { id: "u6", name: "Sajid Ali", phone: "+91 98765 43215", email: "sajid@bharauli.in", role: "collector", active: false, twoFA: false, lastSeen: "2 months ago" },
-];
 
 const PERMISSIONS: { label: string; roles: Record<Role, boolean | "none"> }[] = [
   { label: "View dashboard", roles: { super_admin: true, sadar: true, khajanchi: true, secretary: true, auditor: true, collector: true, member: "none" } },
@@ -61,9 +43,75 @@ const PERMISSIONS: { label: string; roles: Record<Role, boolean | "none"> }[] = 
 
 const MATRIX_ROLES: Role[] = ["sadar", "khajanchi", "secretary", "auditor", "collector"];
 
+const ROLE_OPTIONS = MATRIX_ROLES.map((r) => ({
+  value: r,
+  label: r.charAt(0).toUpperCase() + r.slice(1),
+}));
+
 export default function RolesPage() {
   const [addOpen, setAddOpen] = useState(false);
-  const [users, setUsers] = useState(USERS);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    listStaff()
+      .then((s) => {
+        if (mounted) setStaff(s);
+      })
+      .catch((e) => {
+        if (mounted) setError(e instanceof Error ? e.message : "Staff load nahi hua");
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function handleRoleChange(id: string, newRole: Role) {
+    try {
+      await updateStaffRole(id, newRole);
+      setStaff((prev) => prev.map((s) => (s.id === id ? { ...s, role: newRole } : s)));
+      toast("Role updated");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Role update failed", "error");
+    }
+  }
+
+  async function handleActiveChange(id: string, active: boolean) {
+    try {
+      await updateStaffActive(id, active);
+      setStaff((prev) => prev.map((s) => (s.id === id ? { ...s, active } : s)));
+      toast(active ? "Access enabled" : "Access disabled");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed", "error");
+    }
+  }
+
+  if (loading) {
+    return (
+      <>
+        <PageHeader eyebrow="Settings" title="Roles & access" description="Loading…" />
+        <Card className="flex items-center justify-center gap-2 p-10 text-[13px] text-ink-500">
+          Staff list taiyaar ho raha hai…
+        </Card>
+      </>
+    );
+  }
+
+  if (error) {
+    return (
+      <>
+        <PageHeader eyebrow="Settings" title="Roles & access" />
+        <Card className="p-8 text-center border-red-200 bg-red-50">
+          <p className="text-red-700">{error}</p>
+        </Card>
+      </>
+    );
+  }
 
   return (
     <>
@@ -81,54 +129,42 @@ export default function RolesPage() {
       <div className="grid gap-5 xl:grid-cols-3">
         <div className="space-y-5 xl:col-span-2">
           <Card>
-            <CardHeader title="People with access" subtitle={`${users.filter((u) => u.active).length} active`} />
+            <CardHeader title="People with access" subtitle={`${staff.filter((u) => u.active).length} active`} />
             <div className="divide-y divide-ink-100">
-              {users.map((u) => (
+              {staff.map((u) => (
                 <div key={u.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5">
                   <Avatar name={u.name} size="md" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-[13px] font-medium text-ink-900">{u.name}</p>
-                      {u.twoFA && (
-                        <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
-                          <ShieldCheck className="h-3 w-3" /> 2FA
-                        </span>
-                      )}
-                      {!u.active && <Badge tone="slate">Disabled</Badge>}
                     </div>
                     <p className="text-[11.5px] text-ink-500">
-                      {u.email} · {u.phone}
+                      {u.role}
                     </p>
-                    <p className="text-[10.5px] text-ink-400">Last active {u.lastSeen}</p>
+                    <p className="text-[10.5px] text-ink-400">Last seen recently</p>
                   </div>
                   <Select
                     value={u.role}
-                    onChange={(e) =>
-                      setUsers((prev) =>
-                        prev.map((x) =>
-                          x.id === u.id ? { ...x, role: e.target.value as Role } : x
-                        )
-                      )
-                    }
+                    onChange={(e) => handleRoleChange(u.id, e.target.value as Role)}
                     className="w-auto py-1.5 text-[12px]"
                   >
-                    {MATRIX_ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {ROLE_LABEL[r]}
+                    {ROLE_OPTIONS.map((r) => (
+                      <option key={r.value} value={r.value}>
+                        {r.label}
                       </option>
                     ))}
                   </Select>
                   <Switch
                     checked={u.active}
-                    onChange={(v) => {
-                      setUsers((prev) =>
-                        prev.map((x) => (x.id === u.id ? { ...x, active: v } : x))
-                      );
-                      toast(v ? "Access enabled" : "Access disabled");
-                    }}
+                    onChange={(v) => handleActiveChange(u.id, v)}
                   />
                 </div>
               ))}
+              {staff.length === 0 && (
+                <div className="px-5 py-8 text-center text-ink-500">
+                  No staff members found
+                </div>
+              )}
             </div>
           </Card>
 
@@ -146,7 +182,7 @@ export default function RolesPage() {
                     </th>
                     {MATRIX_ROLES.map((r) => (
                       <th key={r} className="px-2 py-2.5 text-center text-[10.5px] font-semibold uppercase tracking-wide text-ink-500">
-                        {ROLE_LABEL[r].split(" ")[0]}
+                        {r.charAt(0).toUpperCase() + r.slice(1)}
                       </th>
                     ))}
                   </tr>
@@ -206,20 +242,9 @@ export default function RolesPage() {
           <Card>
             <CardHeader title="Access log" subtitle="Last 5 sensitive actions" />
             <div className="divide-y divide-ink-100">
-              {[
-                { who: "Sadar Muhammad Yusuf", what: "Approved expense ₹3,850", when: "10 min ago" },
-                { who: "Khajanchi Abdul Karim", what: "Verified payment ₹500", when: "1 hour ago" },
-                { who: "Secretary Nadeem Ahmad", what: "Added member BHR-000031-9", when: "3 hours ago" },
-                { who: "Auditor Haji Ashraf Ali", what: "Exported audit pack", when: "Yesterday" },
-                { who: "Sadar Muhammad Yusuf", what: "Changed collector access", when: "2 days ago" },
-              ].map((l) => (
-                <div key={l.what} className="px-5 py-3">
-                  <p className="text-[12px] font-medium text-ink-800">{l.what}</p>
-                  <p className="text-[11px] text-ink-500">
-                    {l.who} · {l.when}
-                  </p>
-                </div>
-              ))}
+              <div className="px-5 py-3 text-center text-ink-500">
+                Audit log appears here after real actions are performed.
+              </div>
             </div>
           </Card>
 
@@ -245,7 +270,7 @@ export default function RolesPage() {
             <Button variant="secondary" onClick={() => setAddOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => { toast("Invite sent"); setAddOpen(false); }}>
+            <Button onClick={() => { toast("Invite sent (demo)"); setAddOpen(false); }}>
               <KeyRound className="h-4 w-4" /> Send invite
             </Button>
           </div>
@@ -263,9 +288,9 @@ export default function RolesPage() {
           </Field>
           <Field label="Role" className="sm:col-span-2">
             <Select defaultValue="collector">
-              {MATRIX_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_LABEL[r]}
+              {ROLE_OPTIONS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
                 </option>
               ))}
             </Select>

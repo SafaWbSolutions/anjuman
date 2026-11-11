@@ -100,6 +100,53 @@
   }
 }
 
+/* ── Print isolation ────────────────────────────────────────────────
+   `printArea()` clones every `.print-area` into #print-root and adds
+   `body.print-mode`. Everything else is display:none, so only the card /
+   receipt / statement prints — never the sidebar, header or full page.
+   These rules sit outside @media print on purpose: they also work when
+   a browser ignores print emulation, and they can be checked on screen. */
+body.print-mode > *:not(#print-root) {
+  display: none !important;
+}
+body.print-mode #print-root {
+  display: block !important;
+  background: #fff !important;
+  color: #000 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}
+body.print-mode #print-root .no-print {
+  display: none !important;
+}
+body.print-mode #print-root .id-sheet {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 6mm !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  background: #fff !important;
+}
+body.print-mode #print-root .id-card {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+body.print-mode #print-root .receipt-58,
+body.print-mode #print-root .receipt-80 {
+  margin: 0 !important;
+  box-shadow: none !important;
+  background: #fff !important;
+}
+@page {
+  size: A4 portrait;
+  margin: 8mm;
+}
+
+
 .receipt-58 {
   width: 58mm;
   font-family: "Courier New", monospace;

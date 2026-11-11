@@ -19,7 +19,7 @@ import * as Icons from "lucide-react";
 import { useAuth, roleLabel } from "@/lib/auth";
 import { navForRole } from "@/lib/nav";
 import { ROLE_LABEL, type Role } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, ensurePrintRoot } from "@/lib/utils";
 import { members, complaints, approvals } from "@/lib/mock";
 import { Avatar, Badge, Toaster } from "@/components/ui";
 
@@ -50,6 +50,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Ctrl+P and the browser's own Print menu skip the app's Print buttons;
+  // isolate the printable area there as well so the full page never prints.
+  useEffect(() => {
+    const onBeforePrint = () => ensurePrintRoot();
+    window.addEventListener("beforeprint", onBeforePrint);
+    return () => window.removeEventListener("beforeprint", onBeforePrint);
   }, []);
 
   if (!ready || !user) {

@@ -147,3 +147,90 @@ export function amountInWords(paise: number) {
   if (rest) parts.push(three(rest));
   return `${parts.join(" ")} rupees`;
 }
+
+let cleanupPrintRoot: (() => void) | null = null;
+
+/**
+ * Clone the page's `.print-area` blocks into a `#print-root` node and hide
+ * everything else on <body>. Returns the cleanup function, or null when the
+ * page has nothing printable.
+ */
+function buildPrintRoot(): (() => void) | null {
+  // Drop a leftover clone from a previous/aborted print.
+  document.getElementById("print-root")?.remove();
+  document.getElementById("print-page-size")?.remove();
+
+  // Only visible areas take part in the printout: a closed drawer or an
+  // empty placeholder must never produce a blank sheet.
+  const areas = Array.from(document.querySelectorAll<HTMLElement>(".print-area")).filter(
+    (area) => area.getClientRects().length > 0
+  );
+  if (areas.length === 0) return null;
+
+  const host = document.createElement("div");
+  host.id = "print-root";
+  for (const area of areas) {
+    host.appendChild(area.cloneNode(true));
+  }
+
+  // Paper size: thermal receipts print on a roll, everything else on A4.
+  // Thermal rolls have no real margin, so the receipt supplies its own padding.
+  const style = document.createElement("style");
+  style.id = "print-page-size";
+  if (host.querySelector(".receipt-58")) {
+    style.textContent = "@page { size: 58mm auto; margin: 0; }";
+  } else if (host.querySelector(".receipt-80")) {
+    style.textContent = "@page { size: 80mm auto; margin: 0; }";
+  } else {
+    style.textContent = "@page { size: A4 portrait; margin: 8mm; }";
+  }
+
+  document.body.appendChild(host);
+  document.head.appendChild(style);
+  document.body.classList.add("print-mode");
+
+  let done = false;
+  const cleanup = () => {
+    if (done) return;
+    done = true;
+    document.body.classList.remove("print-mode");
+    host.remove();
+    style.remove();
+    window.removeEventListener("afterprint", cleanup);
+    window.removeEventListener("focus", cleanup);
+    if (cleanupPrintRoot === cleanup) cleanupPrintRoot = null;
+  };
+
+  window.addEventListener("afterprint", cleanup);
+  // Some mobile browsers never fire afterprint; focus returns to the window
+  // once the print dialog closes, which is an equally reliable signal.
+  window.addEventListener("focus", cleanup);
+  window.setTimeout(cleanup, 60000);
+
+  cleanupPrintRoot = cleanup;
+  return cleanup;
+}
+
+/**
+ * Print ONLY the page's `.print-area` blocks — never the sidebar, header,
+ * filters or the rest of the screen.
+ *
+ * Call this instead of `window.print()`.
+ */
+export function printArea() {
+  if (typeof document === "undefined") return;
+  cleanupPrintRoot?.();
+  buildPrintRoot();
+  window.print();
+}
+
+/**
+ * Ctrl+P / browser-menu printing bypasses the app's Print buttons. Build the
+ * same isolated root in `beforeprint` so those routes print only the printable
+ * area too. Safe to call repeatedly.
+ */
+export function ensurePrintRoot() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById("print-root")) return;
+  buildPrintRoot();
+}

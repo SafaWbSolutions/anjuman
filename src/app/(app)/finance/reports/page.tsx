@@ -44,8 +44,10 @@ import {
   cn,
   currentPeriod,
   downloadCSV,
+  formatDate,
   formatINR,
   periodLabel,
+  printArea,
   shiftPeriod,
 } from "@/lib/utils";
 
@@ -280,7 +282,7 @@ export default function ReportsPage() {
 
   function exportReport(id: ReportId, name: string, format: "csv" | "print") {
     if (format === "print") {
-      window.print();
+      printArea();
       return;
     }
     setBusy(`${id}-csv`);
@@ -344,8 +346,19 @@ export default function ReportsPage() {
         }
       />
 
+      {/* ── Printable statement ───────────────────────────── */}
+      <div className="print-area">
+        <div className="hidden print:block">
+          <div className="mb-3 border-b-2 border-black pb-2">
+            <p className="text-[15px] font-bold">Anjuman — Financial statement</p>
+            <p className="text-[11px]">
+              {periodLabel(period)} · generated {formatDate(new Date().toISOString(), true)}
+            </p>
+          </div>
+        </div>
+
       {error && (
-        <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-[12.5px] text-red-700">
+        <div className="no-print mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-[12.5px] text-red-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span className="flex-1">{error}</span>
           <button className="font-semibold underline" onClick={() => void load()}>
@@ -425,7 +438,7 @@ export default function ReportsPage() {
         </Card>
       </div>
 
-      <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="no-print mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {REPORTS.map((r) => {
           const Icon = r.icon;
           return (
@@ -487,7 +500,7 @@ export default function ReportsPage() {
             title="Top outstanding"
             subtitle="Sorted by amount"
             action={
-              <Button variant="ghost" size="sm" loading={busy === "reminders"} onClick={() => void sendReminders()}>
+              <Button variant="ghost" size="sm" loading={busy === "reminders"} onClick={() => void sendReminders()} className="no-print">
                 Send reminders
               </Button>
             }
@@ -529,12 +542,12 @@ export default function ReportsPage() {
         </Card>
       </div>
 
-      <Card className="mt-5">
+      <Card className="no-print mt-5">
         <div className="flex flex-wrap items-center gap-3 p-4">
           <p className="text-[12.5px] text-ink-600">
             Need a printed statement for the general body meeting?
           </p>
-          <Button variant="secondary" size="sm" className="ml-auto" onClick={() => window.print()}>
+          <Button variant="secondary" size="sm" className="ml-auto" onClick={() => printArea()}>
             <Printer className="h-3.5 w-3.5" /> Print current view
           </Button>
         </div>
@@ -544,6 +557,7 @@ export default function ReportsPage() {
         All-time billed {formatINR(totalBilled)} · lifetime collected {formatINR(totalPaid + donations.filter((d) => d.status === "verified").reduce((s, d) => s + d.amountPaise, 0))} ·
         ledger entries loaded {ledger.length}
       </p>
+      </div>
     </>
   );
 }

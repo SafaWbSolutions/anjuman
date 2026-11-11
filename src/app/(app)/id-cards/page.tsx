@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import type { Member, Tenant } from "@/lib/types";
 import { listMembers, getCurrentTenant } from "@/lib/repo";
-import { cn } from "@/lib/utils";
+import { cn, printArea } from "@/lib/utils";
 import {
   Avatar,
   Badge,
@@ -166,7 +166,7 @@ export default function IdCardsPage() {
             <Button
               onClick={() => {
                 if (chosen.length === 0) return toast("Select at least one member", "error");
-                window.print();
+                printArea();
               }}
             >
               <Printer className="h-4 w-4" /> Print {chosen.length || ""}
@@ -296,7 +296,7 @@ export default function IdCardsPage() {
               </div>
             </div>
           ) : (
-            <div className="print-area">
+            <div>
               <div className="mx-auto rounded-2xl bg-white p-6 shadow-[var(--shadow-card)] ring-1 ring-ink-200 text-center text-ink-500">
                 <p>Loading ID cards…</p>
               </div>

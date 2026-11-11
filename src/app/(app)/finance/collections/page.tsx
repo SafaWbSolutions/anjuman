@@ -36,6 +36,7 @@ import {
   formatDate,
   formatINR,
   periodLabel,
+  printArea,
 } from "@/lib/utils";
 import {
   Avatar,
@@ -925,7 +926,7 @@ function ReceiptDrawer({
           <Button variant="secondary" className="flex-1" onClick={onClose}>
             Close
           </Button>
-          <Button className="flex-1" onClick={() => window.print()}>
+          <Button className="flex-1" onClick={() => printArea()}>
             <Printer className="h-4 w-4" /> Print
           </Button>
         </div>
@@ -953,7 +954,12 @@ function ReceiptDrawer({
       </div>
 
       <div className="flex justify-center rounded-xl bg-ink-50 p-4">
-        <div className={cn("bg-white p-3 shadow-sm", size === "58" ? "receipt-58" : "receipt-80")}>
+        <div
+          className={cn(
+            "print-area bg-white p-3 shadow-sm",
+            size === "58" ? "receipt-58" : "receipt-80"
+          )}
+        >
           <div className="text-center">
             <p className="text-[13px] font-bold tracking-wide">
               {tenant.name}

@@ -147,10 +147,21 @@ export function FinanceOverview({
 
   const donationOf = useCallback(
     (needle: string) =>
-      rangeDonations.filter((d) =>
-        `${d.fundName}`.toLowerCase().includes(needle)
-      ),
-    [rangeDonations]
+      rangeDonations.filter((d) => {
+        const f = funds.find((x) => x.id === d.fundId);
+        return `${f?.code ?? ""} ${f?.name ?? d.fundName ?? ""}`
+          .toLowerCase()
+          .includes(needle);
+      }),
+    [rangeDonations, funds]
+  );
+
+  const fundBalanceOf = useCallback(
+    (needle: string) =>
+      funds
+        .filter((f) => `${f.code} ${f.name}`.toLowerCase().includes(needle))
+        .reduce((s, f) => s + f.balancePaise, 0),
+    [funds]
   );
 
   const collected = rangePayments.reduce((s, p) => s + p.amountPaise, 0);
@@ -238,13 +249,32 @@ export function FinanceOverview({
     },
     {
       key: "gift",
-      label: "Total gift / donation",
-      sub: `${rangeDonations.length} donations`,
+      label: "Gift amount",
+      sub: `Fund balance ${formatINR(fundBalanceOf("gift"))}`,
+      value: gift,
+      icon: Gift,
+      tone: "violet",
+      table: () => ({
+        title: "Gift / donation fund",
+        subtitle: label,
+        headers: ["Date", "Donor", "Method", "Amount"],
+        rows: donationOf("gift").map((d) => [
+          formatDate(d.createdAt),
+          d.anonymous ? "Anonymous" : d.donorName,
+          d.method.toUpperCase(),
+          formatINR(d.amountPaise),
+        ]),
+      }),
+    },
+    {
+      key: "donations",
+      label: "All donations",
+      sub: `${rangeDonations.length} entries`,
       value: gifted,
       icon: HeartHandshake,
       tone: "violet",
       table: () => ({
-        title: "Donations",
+        title: "All donations",
         subtitle: label,
         headers: ["Date", "Donor", "Fund", "Method", "Amount"],
         rows: rangeDonations.map((d) => [
@@ -259,7 +289,7 @@ export function FinanceOverview({
     {
       key: "zakat",
       label: "Zakat",
-      sub: `${donationOf("zakat").length} entries`,
+      sub: `Fund balance ${formatINR(fundBalanceOf("zakat"))}`,
       value: zakat,
       icon: Banknote,
       tone: "green",
@@ -278,7 +308,7 @@ export function FinanceOverview({
     {
       key: "sadqa",
       label: "Sadqa",
-      sub: `${donationOf("sadqa").length} entries`,
+      sub: `Fund balance ${formatINR(fundBalanceOf("sadqa"))}`,
       value: sadqa,
       icon: Gift,
       tone: "violet",

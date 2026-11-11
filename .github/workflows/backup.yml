@@ -67,10 +67,15 @@ jobs:
         env:
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           STAMP=$(date -u +%Y/%m/%d)
           FILE="anjuman-$(date -u +%Y%m%d-%H%M).sql.gz"
-          pg_dump "$DB_URL" --no-owner --no-privileges --clean --if-exists | gzip -9 > "$FILE"
+          if ! pg_dump "$DB_URL" --no-owner --no-privileges --clean --if-exists > dump.sql 2> dump.err; then
+            ERR=$(tr '\n' ' ' < dump.err | tail -c 600)
+            echo "::error::pg_dump failed: $ERR"
+            exit 1
+          fi
+          gzip -9 < dump.sql > "$FILE"
           gzip -t "$FILE" # fail loudly on a truncated dump
           SIZE=$(stat -c %s "$FILE")
           if [ "$SIZE" -lt 2000 ]; then

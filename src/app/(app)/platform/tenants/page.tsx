@@ -266,6 +266,7 @@ export default function TenantsPage() {
       </Card>
 
       <TenantDrawer
+        key={selected?.id ?? "none"}
         tenant={selected}
         onClose={() => {
           setSelected(null);
@@ -292,6 +293,7 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
     auditPack: true,
   });
   const [saving, setSaving] = useState(false);
+  const [expiresAt, setExpiresAt] = useState(tenant?.expiresAt ?? "");
 
   if (!tenant) return null;
 
@@ -303,7 +305,7 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
         planType,
         planAmountPaise: planType === "free" ? 0 : Math.round(Number(amount) * 100),
         status,
-        expiresAt: tenant.expiresAt,
+        expiresAt: expiresAt || null,
       });
       // Save feature flags separately via tenant settings is not exposed yet;
       // we persist them on the tenant row via features column if the column exists.
@@ -340,11 +342,21 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
     if (!tenant) return;
     setSaving(true);
     try {
+      // If the old expiry date is already in the past, give a full year so
+      // the nightly expiry job does not immediately switch it back off.
+      const today = new Date().toISOString().slice(0, 10);
+      let nextExpiry = expiresAt;
+      if (!nextExpiry || nextExpiry < today) {
+        const d = new Date();
+        d.setFullYear(d.getFullYear() + 1);
+        nextExpiry = d.toISOString().slice(0, 10);
+        setExpiresAt(nextExpiry);
+      }
       await saveTenantProfileForTenant(tenant.id, {
         status: "active",
         planType,
         planAmountPaise: planType === "free" ? 0 : Math.round(Number(amount) * 100),
-        expiresAt: tenant.expiresAt,
+        expiresAt: nextExpiry,
       });
       toast("Anjuman reactivated — all logins restored, data intact");
       onClose();
@@ -424,7 +436,11 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
           </Select>
         </Field>
         <Field label="Expiry date">
-          <Input type="date" defaultValue={tenant.expiresAt ?? ""} />
+          <Input
+            type="date"
+            value={expiresAt}
+            onChange={(e) => setExpiresAt(e.target.value)}
+          />
         </Field>
         <Field label="Grace period (days)" hint="Access continues read-only after expiry.">
           <Input defaultValue="14" inputMode="numeric" />

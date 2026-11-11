@@ -98,6 +98,12 @@ interface AuthState {
   emailOtp: { email: string; role: Role } | null;
   verifyEmailOtp: (token: string) => Promise<void>;
   cancelEmailOtp: () => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<void>;
+  resetPassword: (
+    email: string,
+    token: string,
+    newPassword: string
+  ) => Promise<void>;
   signOut: () => Promise<void>;
   switchRole: (role: Role) => void;
   refreshUser: () => Promise<void>;
@@ -298,6 +304,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setEmailOtp(null);
   }, [demoMode]);
 
+  /** Email a 6-digit code so the user can set a new password. */
+  const requestPasswordReset = useCallback(async (email: string) => {
+    if (demoMode) return;
+    if (!supabase) throw new Error("Supabase is not configured");
+    const clean = email.trim();
+    if (!clean) throw new Error("Email daalo");
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: clean,
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: `${window.location.origin}/login/`,
+      },
+    });
+    if (error) throw error;
+  }, [demoMode]);
+
+  /** Verify the emailed code, set the new password and trust this device. */
+  const resetPassword = useCallback(
+    async (email: string, token: string, newPassword: string) => {
+      if (demoMode) return;
+      if (!supabase) throw new Error("Supabase is not configured");
+      if (newPassword.length < 8) {
+        throw new Error("Naya password kam se kam 8 characters ka hona chahiye");
+      }
+
+      const { error } = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: token.trim(),
+        type: "email",
+      });
+      if (error) throw error;
+
+      const { data: session } = await supabase.auth.getSession();
+      const uid = session.session?.user.id;
+      if (!uid) throw new Error("Session expire ho gaya — code dobara bhejo");
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (updateError) throw updateError;
+
+      // They just proved control of the email — do not ask again on this device.
+      try {
+        window.localStorage.setItem(`anjuman.device.${uid}`, "1");
+      } catch {
+        /* private mode */
+      }
+      await supabase.auth.signOut();
+      setMfaPending(null);
+      setEmailOtp(null);
+    },
+    [demoMode]
+  );
+
   const verifyMfa = useCallback(async (code: string) => {
     if (!supabase || !mfaPending) throw new Error("2FA session nahi mila — dobara login karein");
     const challenge = await supabase.auth.mfa.challenge({ factorId: mfaPending.factorId });
@@ -375,6 +436,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       emailOtp,
       verifyEmailOtp,
       cancelEmailOtp,
+      requestPasswordReset,
+      resetPassword,
       signOut,
       switchRole,
       refreshUser,
@@ -392,6 +455,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       emailOtp,
       verifyEmailOtp,
       cancelEmailOtp,
+      requestPasswordReset,
+      resetPassword,
       signOut,
       switchRole,
       refreshUser,

@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AlertCircle,
   ArrowRight,
   BadgeCheck,
   BookOpenCheck,
   Building2,
+  CheckCircle2,
   Loader2,
   Lock,
   Mail,
@@ -16,7 +18,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ROLE_LABEL, type Role } from "@/lib/types";
-import { Button, Input, toast } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 const ROLE_CARDS: {
@@ -53,13 +55,31 @@ const ROLE_CARDS: {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user, ready, demoMode, signIn, mfaPending, verifyMfa, cancelMfa, emailOtp, verifyEmailOtp, cancelEmailOtp } = useAuth();
+  const { user, ready, demoMode, signIn, mfaPending, verifyMfa, cancelMfa, emailOtp, verifyEmailOtp, cancelEmailOtp, requestPasswordReset, resetPassword } = useAuth();
   const [busy, setBusy] = useState<Role | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [otp, setOtp] = useState("");
   const [verifying, setVerifying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [mode, setMode] = useState<"login" | "reset">("login");
+  const [resetStage, setResetStage] = useState<"email" | "code">("email");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
+
+  /** Show the real reason — Supabase errors are not always Error objects. */
+  function msgOf(e: unknown, fallback: string) {
+    if (e instanceof Error && e.message) return e.message;
+    if (e && typeof e === "object" && "message" in e) {
+      const m = (e as { message?: unknown }).message;
+      if (typeof m === "string" && m) return m;
+    }
+    return fallback;
+  }
 
   useEffect(() => {
     if (ready && user) router.replace("/dashboard/");
@@ -71,7 +91,7 @@ export default function LoginPage() {
       const result = await signIn(role);
       if (result.step === "done") router.replace("/dashboard/");
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Sign in failed", "error");
+      setError(msgOf(err, "Sign in failed"));
       setBusy(null);
     }
   }
@@ -79,27 +99,79 @@ export default function LoginPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy("member");
+    setError(null);
+    setNotice(null);
     try {
       const result = await signIn("member", email, password);
       if (result.step === "done") router.replace("/dashboard/");
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Sign in failed", "error");
+      setError(
+        msgOf(
+          err,
+          "Email ya password galat hai. Dobara try karo ya Forgot password use karo."
+        )
+      );
       setBusy(null);
+    }
+  }
+
+  async function sendReset(e: React.FormEvent) {
+    e.preventDefault();
+    setResetBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await requestPasswordReset(resetEmail || email);
+      setResetStage("code");
+      setNotice(
+        `6-digit code ${resetEmail || email} par bheja gaya. Inbox / Spam check karo.`
+      );
+    } catch (err) {
+      setError(msgOf(err, "Reset code nahi bheja ja saka"));
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+  async function completeReset(e: React.FormEvent) {
+    e.preventDefault();
+    if (resetToken.trim().length < 6) {
+      setError("Email me aaya 6-digit code daalo");
+      return;
+    }
+    setResetBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await resetPassword(resetEmail || email, resetToken, newPassword);
+      setEmail(resetEmail || email);
+      setPassword("");
+      setMode("login");
+      setResetStage("email");
+      setResetToken("");
+      setNewPassword("");
+      setError(null);
+      setNotice("Password set ho gaya — ab naye password se sign in karo.");
+    } catch (err) {
+      setError(msgOf(err, "Password reset nahi hua — code dobara bhejo"));
+    } finally {
+      setResetBusy(false);
     }
   }
 
   async function submitCode(e: React.FormEvent) {
     e.preventDefault();
     if (code.trim().length !== 6) {
-      toast("6-digit code daalo", "error");
+      setError("6-digit code daalo");
       return;
     }
     setVerifying(true);
+    setError(null);
     try {
       await verifyMfa(code);
       router.replace("/dashboard/");
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Code galat hai", "error");
+      setError(msgOf(err, "Code galat hai"));
       setCode("");
     } finally {
       setVerifying(false);
@@ -109,15 +181,16 @@ export default function LoginPage() {
   async function submitEmailCode(e: React.FormEvent) {
     e.preventDefault();
     if (otp.trim().length < 6) {
-      toast("Email me aaya code daalo", "error");
+      setError("Email me aaya code daalo");
       return;
     }
     setVerifying(true);
+    setError(null);
     try {
       await verifyEmailOtp(otp);
       router.replace("/dashboard/");
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Code galat ya expire ho gaya", "error");
+      setError(msgOf(err, "Code galat ya expire ho gaya"));
       setOtp("");
     } finally {
       setVerifying(false);
@@ -205,8 +278,23 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-ink-500">
             {demoMode
               ? "Demo mode — choose a role to explore the panel. No password needed."
-              : "Sign in with the email your anjuman secretary registered."}
+              : mode === "reset"
+                ? "Email par code aayega — usi se naya password set karo."
+                : "Sign in with the email your anjuman secretary registered."}
           </p>
+
+          {error && (
+            <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-[12.5px] text-red-700">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+          {notice && (
+            <div className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-[12.5px] text-emerald-800">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{notice}</span>
+            </div>
+          )}
 
           {demoMode ? (
             <>
@@ -261,6 +349,89 @@ export default function LoginPage() {
                 Nothing you enter is saved to a server.
               </p>
             </>
+          ) : mode === "reset" ? (
+            resetStage === "email" ? (
+              <form onSubmit={sendReset} className="mt-6 space-y-4">
+                <div>
+                  <label className="label">Registered email</label>
+                  <Input
+                    icon={Mail}
+                    type="email"
+                    required
+                    value={resetEmail || email}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    autoFocus
+                  />
+                </div>
+                <Button type="submit" size="lg" className="w-full" loading={resetBusy}>
+                  Send reset code
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("login");
+                    setResetStage("email");
+                    setError(null);
+                    setNotice(null);
+                  }}
+                  className="w-full text-center text-[12.5px] text-ink-500 hover:text-ink-700"
+                >
+                  ← Back to sign in
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={completeReset} className="mt-6 space-y-4">
+                <div>
+                  <label className="label">Email code</label>
+                  <Input
+                    value={resetToken}
+                    onChange={(e) =>
+                      setResetToken(e.target.value.replace(/\D/g, "").slice(0, 8))
+                    }
+                    placeholder="123456"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    className="text-center font-mono text-xl tracking-[0.4em]"
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="label">New password</label>
+                  <Input
+                    icon={Lock}
+                    type="password"
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Kam se kam 8 characters"
+                    autoComplete="new-password"
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  size="lg"
+                  className="w-full"
+                  loading={resetBusy}
+                  disabled={newPassword.length < 8}
+                >
+                  Set new password
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetStage("email");
+                    setResetToken("");
+                    setNewPassword("");
+                    setNotice(null);
+                  }}
+                  className="w-full text-center text-[12.5px] text-ink-500 hover:text-ink-700"
+                >
+                  Code nahi aaya? Dobara bhejo
+                </button>
+              </form>
+            )
           ) : emailOtp ? (
             <form onSubmit={submitEmailCode} className="mt-6 space-y-4">
               <div className="flex items-start gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-3.5">
@@ -361,10 +532,22 @@ export default function LoginPage() {
               <Button type="submit" size="lg" className="w-full" loading={busy !== null}>
                 Sign in
               </Button>
-              <p className="text-center text-[12.5px] text-ink-500">
-                Forgot password? Ask your anjuman secretary to reset it from
-                Settings → Roles &amp; Access.
-              </p>
+              <div className="flex items-center justify-between text-[12.5px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetEmail(email);
+                    setMode("reset");
+                    setResetStage("email");
+                    setError(null);
+                    setNotice(null);
+                  }}
+                  className="font-medium text-brand-700 hover:underline"
+                >
+                  Forgot password?
+                </button>
+                <span className="text-ink-400">6-digit email code</span>
+              </div>
             </form>
           )}
 

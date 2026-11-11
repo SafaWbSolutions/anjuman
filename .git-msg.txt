@@ -1,0 +1,5 @@
+fix(id-cards): move all hooks above early returns (React error #310)
+
+`mohallas` useMemo was declared after the loading/error early returns, so the
+hook count changed between renders. Static export page crashed with
+"Rendered more hooks than during the previous render" on every panel.

@@ -111,6 +111,11 @@ export default function IdCardsPage() {
     });
   }, [q, mohalla, members]);
 
+  const mohallas = useMemo(
+    () => Array.from(new Set(members.map((m) => m.mohalla))).sort(),
+    [members]
+  );
+
   const chosen = members.filter((m) => selected.has(m.id));
 
   function toggle(id: string) {
@@ -143,8 +148,6 @@ export default function IdCardsPage() {
       </>
     );
   }
-
-  const mohallas = useMemo(() => Array.from(new Set(members.map((m) => m.mohalla))).sort(), [members]);
 
   return (
     <>

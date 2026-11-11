@@ -21,7 +21,7 @@ import { navForRole } from "@/lib/nav";
 import { ROLE_LABEL, type Role } from "@/lib/types";
 import { cn, ensurePrintRoot } from "@/lib/utils";
 import { members, complaints, approvals } from "@/lib/mock";
-import { generateInvoices } from "@/lib/repo";
+import { generateInvoices, getWorkQueue, listComplaints } from "@/lib/repo";
 import { isDemoMode } from "@/lib/supabase";
 import { Avatar, Badge, Toaster, toast } from "@/components/ui";
 
@@ -34,6 +34,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  const [openComplaintCount, setOpenComplaintCount] = useState(0);
 
   useEffect(() => {
     if (ready && !user) router.replace("/login/");
@@ -81,6 +83,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setMobileOpen(false);
   }, [pathname]);
 
+  // Real pending counts for the sidebar badge and the bell — never the
+  // demo seed. Reloads on every navigation so approving something clears
+  // the badge immediately.
+  useEffect(() => {
+    if (!user) return;
+    if (demoMode) {
+      setPendingApprovalCount(approvals.filter((a) => a.status === "pending").length);
+      setOpenComplaintCount(complaints.filter((c) => c.status === "open").length);
+      return;
+    }
+
+    let alive = true;
+    const canSeeApprovals = ["sadar", "khajanchi", "auditor"].includes(user.role);
+    const canSeeComplaints = ["member", "sadar"].includes(user.role);
+
+    void Promise.all([
+      canSeeApprovals ? getWorkQueue() : Promise.resolve(null),
+      canSeeComplaints ? listComplaints() : Promise.resolve([]),
+    ])
+      .then(([queue, complaintsR]) => {
+        if (!alive) return;
+        setPendingApprovalCount(queue ? queue.pendingApprovals : 0);
+        setOpenComplaintCount(
+          complaintsR.filter((c) => c.status === "open").length
+        );
+      })
+      .catch(() => {
+        if (!alive) return;
+        setPendingApprovalCount(0);
+        setOpenComplaintCount(0);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [user, pathname, demoMode]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -111,7 +150,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const pendingApprovals = approvals.filter((a) => a.status === "pending").length;
+  const pendingApprovals = pendingApprovalCount;
   const sections = navForRole(user.role).map((s) => ({
     ...s,
     items: s.items.map((i) =>
@@ -120,13 +159,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         : i
     ),
   }));
-  const pendingCount =
-    (user.role === "sadar" || user.role === "khajanchi" || user.role === "auditor"
-      ? approvals.filter((a) => a.status === "pending").length
-      : 0) +
-    (user.role === "member" || user.role === "sadar"
-      ? complaints.filter((c) => c.status === "open").length
-      : 0);
+  const pendingCount = pendingApprovalCount + openComplaintCount;
 
   return (
     <div className="min-h-screen bg-ink-50">

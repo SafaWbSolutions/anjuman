@@ -1,6 +1,0 @@
-fix(hydration): guard window access in page.tsx and verify/page.tsx
-
-- page.tsx: added mounted state, only access localStorage after client mount
-- verify/page.tsx: guard window.location.search with typeof window check
-- Resolves React error #310 across all pages during static export
-- Typecheck, build all pass

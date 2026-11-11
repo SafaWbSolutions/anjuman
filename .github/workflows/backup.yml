@@ -120,6 +120,7 @@ jobs:
           shred -u "$FILE"
           echo "FILE=$FILE.gpg" >> "$GITHUB_ENV"
           echo "ENCRYPTED=true" >> "$GITHUB_ENV"
+          echo "::notice::Backup encrypted with BACKUP_PASSPHRASE (AES-256)"
           ls -lh "$FILE.gpg"
 
       - name: Upload to R2 (optional, never fails the run)

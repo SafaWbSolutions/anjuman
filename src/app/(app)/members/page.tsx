@@ -31,6 +31,7 @@ import {
   listInvoices,
   listMembers,
   listPayments,
+  requestFeeChange,
   saveMemberDetails,
   uploadAvatar,
 } from "@/lib/repo";
@@ -779,6 +780,7 @@ function EditMemberDrawer({
   const [house, setHouse] = useState("");
   const [mohalla, setMohalla] = useState("");
   const [blood, setBlood] = useState("");
+  const [fee, setFee] = useState("");
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -792,6 +794,7 @@ function EditMemberDrawer({
     setHouse(member.household);
     setMohalla(member.mohalla);
     setBlood(member.bloodGroup ?? "");
+    setFee(member.feePaise ? String(Math.round(member.feePaise / 100)) : "");
     setPhotoUrl(member.photoUrl ?? null);
   }, [member?.id]);
 
@@ -838,7 +841,25 @@ function EditMemberDrawer({
         bloodGroup: blood,
         photoUrl,
       });
-      toast("Member details update ho gayi");
+
+      const customPaise = Math.round((Number(fee) || 0) * 100);
+      let feeNote = "";
+      if (customPaise > 0 && customPaise !== member.feePaise) {
+        try {
+          await requestFeeChange(
+            member.id,
+            customPaise,
+            "Custom monthly fee set from member edit"
+          );
+          feeNote = " · custom fee approval ke liye bheji";
+        } catch (e) {
+          feeNote = ` · fee change fail: ${
+            e instanceof Error ? e.message : "unknown error"
+          }`;
+        }
+      }
+
+      toast(`Member details update ho gayi${feeNote}`);
       await onSaved({
         ...member,
         name: name.trim(),
@@ -935,6 +956,17 @@ function EditMemberDrawer({
             onChange={(e) => setBlood(e.target.value.toUpperCase())}
             placeholder="e.g. O+"
             maxLength={3}
+          />
+        </Field>
+        <Field
+          label="Custom monthly fee (₹)"
+          hint="Sirf is member ke liye. Khali = default fee. Change approval ke liye jayega."
+        >
+          <Input
+            value={fee}
+            onChange={(e) => setFee(e.target.value.replace(/[^\d]/g, ""))}
+            inputMode="numeric"
+            placeholder={String(Math.round(member.feePaise / 100))}
           />
         </Field>
       </div>

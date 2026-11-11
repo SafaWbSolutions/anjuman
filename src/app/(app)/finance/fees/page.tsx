@@ -19,6 +19,7 @@ import type { FeeOverride, FeePlan, Invoice, Member } from "@/lib/types";
 import {
   archiveFeePlan,
   createFeePlan,
+  generateDuesRange,
   getTenantSettings,
   listFeeOverrides,
   listFeePlans,
@@ -27,6 +28,7 @@ import {
   requestFeeChange,
   requestWaiver,
   saveTenantSettings,
+  setFeeCycle,
   type TenantSettings,
 } from "@/lib/repo";
 import { isDemoMode } from "@/lib/supabase";
@@ -65,6 +67,10 @@ export default function FeePlansPage() {
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [waiveOpen, setWaiveOpen] = useState(false);
 
+  const [startMonth, setStartMonth] = useState("");
+  const [dueDay, setDueDay] = useState("10");
+  const [cycleBusy, setCycleBusy] = useState<"save" | "generate" | null>(null);
+
   const canWaive = user?.role === "sadar" || user?.role === "secretary";
   const canChangeFee =
     user?.role === "sadar" || user?.role === "secretary" || user?.role === "khajanchi";
@@ -85,6 +91,8 @@ export default function FeePlansPage() {
       setMembers(memberRows);
       setInvoices(invoiceRows);
       setSettings(settingsRow);
+      setStartMonth(settingsRow.feeStartPeriod ?? "");
+      setDueDay(String(settingsRow.invoiceDueDay));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Fees load nahi ho sake");
     } finally {
@@ -141,8 +149,58 @@ export default function FeePlansPage() {
     }
   }
 
-  async function onArchive(plan: FeePlan) {
+  const dueDayNum = Math.min(Math.max(Number(dueDay) || 10, 1), 28);
+
+  /** Months between the chosen start and this month (inclusive). */
+  const cycleMonths = useMemo(() => {
+    if (!/^\d{4}-\d{2}$/.test(startMonth)) return 0;
+    const [y, m] = startMonth.split("-").map(Number);
+    const now = new Date();
+    return Math.max(
+      (now.getFullYear() - y) * 12 + (now.getMonth() + 1 - m) + 1,
+      0
+    );
+  }, [startMonth]);
+
+  async function saveCycle() {
+    if (startMonth && !/^\d{4}-\d{2}$/.test(startMonth)) {
+      toast("Start month YYYY-MM me chuno", "error");
+      return;
+    }
+    setCycleBusy("save");
     try {
+      await setFeeCycle(startMonth || null, dueDayNum);
+      toast("Fee cycle save ho gaya");
+      await load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Cycle save nahi hua", "error");
+    } finally {
+      setCycleBusy(null);
+    }
+  }
+
+  async function runBackfill() {
+    if (!startMonth) {
+      toast("Pehle start month chuno", "error");
+      return;
+    }
+    setCycleBusy("generate");
+    try {
+      const r = await generateDuesRange(startMonth, null);
+      toast(
+        `${r.months} mahine check kiye · ${r.created} naye invoice bane (${formatINR(
+          r.amountPaise
+        )})`
+      );
+      await load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Dues generate nahi hui", "error");
+    } finally {
+      setCycleBusy(null);
+    }
+  }
+
+  async function onArchive(plan: FeePlan) {    try {
       await archiveFeePlan(plan.id);
       setPlans((prev) =>
         prev.map((p) => (p.id === plan.id ? { ...p, isActive: false } : p))
@@ -194,6 +252,76 @@ export default function FeePlansPage() {
         <StatCard label="Concessions given" value={formatINR(concessionTotal)} sub={`${approvedOverrides.length} approved override(s)`} icon={BadgePercent} tone="violet" />
         <StatCard label="Outstanding" value={formatINR(outstanding)} sub="Auto-reminded daily" icon={Wallet} tone="amber" />
       </div>
+
+      {/* ── Billing cycle ────────────────────────────────────── */}
+      <Card className="mt-5">
+        <CardHeader
+          title="Fee cycle (chanda kab se count hoga)"
+          subtitle="Start month chuno — pichhle saal se bhi count kar sakte ho. Due date har month ke liye fix ho jayegi."
+          action={
+            <Badge tone={startMonth ? "green" : "amber"} dot>
+              {startMonth ? `From ${periodLabel(startMonth)}` : "Not set"}
+            </Badge>
+          }
+        />
+        <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
+          <Field
+            label="Start month"
+            hint="Is month se dues ginti shuru hogi"
+          >
+            <Input
+              type="month"
+              value={startMonth}
+              max={new Date().toISOString().slice(0, 7)}
+              onChange={(e) => setStartMonth(e.target.value)}
+            />
+          </Field>
+          <Field label="Due date (day of month)" hint="1 se 28">
+            <Select value={dueDay} onChange={(e) => setDueDay(e.target.value)}>
+              {Array.from({ length: 28 }, (_, i) => String(i + 1)).map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <div className="rounded-xl border border-ink-100 bg-ink-50/50 p-3">
+            <p className="text-[10.5px] uppercase tracking-wide text-ink-400">
+              Months counted
+            </p>
+            <p className="mt-0.5 text-[15px] font-semibold text-ink-900">
+              {cycleMonths || "—"}
+            </p>
+            <p className="text-[11px] text-ink-500">
+              {startMonth
+                ? `${periodLabel(startMonth)} → ${periodLabel(
+                    new Date().toISOString().slice(0, 7)
+                  )}`
+                : "Start month chuno"}
+            </p>
+          </div>
+          <div className="flex flex-col justify-end gap-2">
+            <Button onClick={() => void saveCycle()} loading={cycleBusy === "save"}>
+              <CheckCircle2 className="h-4 w-4" /> Save cycle
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => void runBackfill()}
+              loading={cycleBusy === "generate"}
+              disabled={!startMonth}
+            >
+              <RefreshCw className="h-4 w-4" /> Purane dues banao
+            </Button>
+          </div>
+        </div>
+        <div className="border-t border-ink-100 px-5 py-3 text-[11.5px] leading-relaxed text-ink-500">
+          Har month ki 1 tareekh ko naye dues automatically ban jate hain (daily
+          automation). "Purane dues banao" dabane se start month se aaj tak ke saare
+          invoice ek baar me ban jayenge — dobara dabane par duplicate nahi banenge.
+          Custom fee har member ke <b>Edit</b> drawer se ya upar{" "}
+          <b>Change a fee</b> se set hoti hai.
+        </div>
+      </Card>
 
       {/* ── Plans ────────────────────────────────────────────── */}
       <div className="mt-5 grid gap-4 lg:grid-cols-3">

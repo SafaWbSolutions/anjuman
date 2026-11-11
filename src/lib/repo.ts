@@ -563,6 +563,7 @@ export interface TenantSettings {
   autoVerifyGateway: boolean;
   reminderDays: number[];
   invoiceDueDay: number;
+  feeStartPeriod: string | null;
   receiptFooter: string;
   calcMethod: string;
   fajrAngle: number;
@@ -579,6 +580,7 @@ const demoSettings: TenantSettings = {
   autoVerifyGateway: true,
   reminderDays: [3, 7, 10, 15],
   invoiceDueDay: 10,
+  feeStartPeriod: null,
   receiptFooter: "",
   calcMethod: "karachi",
   fajrAngle: 18,
@@ -607,6 +609,7 @@ export async function getTenantSettings(): Promise<TenantSettings> {
     autoVerifyGateway: Boolean(data.auto_verify_gateway),
     reminderDays: (data.reminder_days ?? demoSettings.reminderDays).map((d: unknown) => num(d)),
     invoiceDueDay: num(data.invoice_due_day, 10),
+    feeStartPeriod: data.fee_start_period ?? null,
     receiptFooter: data.receipt_footer ?? "",
     calcMethod: data.calc_method ?? "karachi",
     fajrAngle: num(data.fajr_angle, 18),
@@ -643,6 +646,44 @@ export async function saveTenantSettings(patch: Partial<TenantSettings>): Promis
     .update(row)
     .eq("tenant_id", await myTenantId());
   if (error) throw error;
+}
+
+/**
+ * From which month does chanda counting start (e.g. 2024-11 for
+ * two years back) and on which day of the month is it due.
+ */
+export async function setFeeCycle(
+  start: string | null,
+  dueDay: number
+): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client().rpc("set_fee_cycle", {
+    p_start: start,
+    p_due_day: dueDay,
+  });
+  if (error) throw error;
+}
+
+/** Create every month's dues from the start month up to now (idempotent). */
+export async function generateDuesRange(
+  from?: string | null,
+  to?: string | null
+): Promise<{ months: number; created: number; amountPaise: number }> {
+  if (isDemoMode) return { months: 0, created: 0, amountPaise: 0 };
+
+  const { data, error } = await client().rpc("generate_dues_range", {
+    p_from: from ?? null,
+    p_to: to ?? null,
+  });
+  if (error) throw error;
+
+  const r = (data ?? {}) as Row;
+  return {
+    months: num(r.months),
+    created: num(r.created),
+    amountPaise: num(r.amount_paise),
+  };
 }
 
 export interface TenantProfilePatch {

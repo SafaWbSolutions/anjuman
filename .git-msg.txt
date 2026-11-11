@@ -1,7 +1,6 @@
-fix(id-cards): robust QR generation for static export
+fix(id-cards): resolve hydration mismatch for static export
 
-- Added `mounted` state to ensure QR generation only runs on client
-- Wrapped QRCode.toDataURL in try-catch with error state
-- Added loading/error indicators in preview area
-- MemberCard already handles missing QR with pulsing placeholder
+- Use relative URL `/verify/?id=CODE` for QR codes (no window.location.origin)
+- Added `mounted` check before rendering print area
+- Loading placeholder while data/QR not ready
 - Typecheck, build all pass

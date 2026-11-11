@@ -72,10 +72,11 @@ export default function IdCardsPage() {
     (async () => {
       try {
         const next: Record<string, string> = {};
-        const origin = window.location.origin;
+        // Use relative URL to avoid hydration mismatch during static export
+        // The browser will resolve it correctly when scanned
         for (const m of members) {
           if (cancelled) break;
-          const url = `${origin}/verify/?id=${m.code}`;
+          const url = `/verify/?id=${m.code}`;
           next[m.id] = await QRCode.toDataURL(url, {
             margin: 1,
             width: 240,
@@ -275,21 +276,29 @@ export default function IdCardsPage() {
             )}
           </div>
 
-          <div className="print-area">
-            <div
-              className={cn(
-                "mx-auto rounded-2xl bg-white p-6 shadow-[var(--shadow-card)] ring-1 ring-ink-200 print:rounded-none print:p-0 print:shadow-none print:ring-0",
-                "id-sheet"
-              )}
-              style={{
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              }}
-            >
-              {(chosen.length ? chosen : members.slice(0, 8)).map((m) => (
-                <MemberCard key={m.id} member={m} qr={qr[m.id]} tenant={tenant} />
-              ))}
+          {mounted && tenant && members.length > 0 ? (
+            <div className="print-area">
+              <div
+                className={cn(
+                  "mx-auto rounded-2xl bg-white p-6 shadow-[var(--shadow-card)] ring-1 ring-ink-200 print:rounded-none print:p-0 print:shadow-none print:ring-0",
+                  "id-sheet"
+                )}
+                style={{
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                }}
+              >
+                {(chosen.length ? chosen : members.slice(0, 8)).map((m) => (
+                  <MemberCard key={m.id} member={m} qr={qr[m.id]} tenant={tenant} />
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="print-area">
+              <div className="mx-auto rounded-2xl bg-white p-6 shadow-[var(--shadow-card)] ring-1 ring-ink-200 text-center text-ink-500">
+                <p>Loading ID cards…</p>
+              </div>
+            </div>
+          )}
 
           {!chosen.length && (
             <p className="no-print mt-3 text-center text-[12px] text-ink-500">

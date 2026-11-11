@@ -27,6 +27,7 @@ import {
   createMember,
   createMemberLogin,
   generateInvoices,
+  generateMemberDues,
   getCurrentTenant,
   listInvoices,
   listMembers,
@@ -997,7 +998,17 @@ function AddMemberDrawer({
   const [mohalla, setMohalla] = useState(mohallas[0] ?? "");
   const [fee, setFee] = useState(String(defaultFee));
   const [memberType, setMemberType] = useState<Member["type"]>("member");
+  const [duesFrom, setDuesFrom] = useState("");
+  const [duesTo, setDuesTo] = useState(new Date().toISOString().slice(0, 7));
   const [saving, setSaving] = useState(false);
+
+  const previewMonths = (() => {
+    if (!/^\d{4}-\d{2}$/.test(duesFrom) || !/^\d{4}-\d{2}$/.test(duesTo)) return 0;
+    const [fy, fm] = duesFrom.split("-").map(Number);
+    const [ty, tm] = duesTo.split("-").map(Number);
+    return Math.max((ty - fy) * 12 + (tm - fm) + 1, 0);
+  })();
+  const previewTotal = previewMonths * Math.round(Number(fee || "0") * 100);
 
   async function save() {
     const cleanPhone = phone.replace(/\D/g, "");
@@ -1033,14 +1044,25 @@ function AddMemberDrawer({
       });
 
       // Give the new member their first invoice straight away so dues
-      // and reminders start from this month.
-      try {
-        await generateInvoices();
-      } catch {
-        /* invoice generation is idempotent — safe to retry later */
+      // and reminders start from this month. With a backdated range we
+      // create every month's invoice from that month instead.
+      let duesNote = "";
+      if (/^\d{4}-\d{2}$/.test(duesFrom)) {
+        try {
+          const r = await generateMemberDues(member.id, duesFrom, duesTo);
+          duesNote = ` · ${r.created} month dues (${formatINR(r.amountPaise)})`;
+        } catch (e) {
+          duesNote = ` · dues fail: ${e instanceof Error ? e.message : "error"}`;
+        }
+      } else {
+        try {
+          await generateInvoices();
+        } catch {
+          /* invoice generation is idempotent — safe to retry later */
+        }
       }
 
-      toast(`Member “${member.name}” added · ${member.code}`);
+      toast(`Member “${member.name}” added · ${member.code}${duesNote}`);
       setName("");
       setFather("");
       setPhone("");
@@ -1136,7 +1158,38 @@ function AddMemberDrawer({
             <option value="staff">Staff</option>
           </Select>
         </Field>
+        <Field
+          label="Dues from (month)"
+          hint="Purana bakaya hai to start month chuno — sabhi mahine ek saath ban jayenge"
+        >
+          <Input
+            type="month"
+            value={duesFrom}
+            max={new Date().toISOString().slice(0, 7)}
+            onChange={(e) => setDuesFrom(e.target.value)}
+          />
+        </Field>
+        <Field label="Dues till (month)" hint="Default: is mahina">
+          <Input
+            type="month"
+            value={duesTo}
+            onChange={(e) => setDuesTo(e.target.value)}
+          />
+        </Field>
       </div>
+
+      {previewMonths > 0 && (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-[12px] text-amber-900">
+          <p className="font-semibold">
+            {previewMonths} month × {formatINR(Math.round(Number(fee || "0") * 100))} ={" "}
+            {formatINR(previewTotal)}
+          </p>
+          <p className="mt-0.5">
+            Save karte hi {periodLabel(duesFrom)} se {periodLabel(duesTo)} tak ke
+            invoices ban jayenge (duplicate nahi banenge).
+          </p>
+        </div>
+      )}
 
       <div className="mt-5 rounded-xl border border-brand-100 bg-brand-50/60 p-3.5 text-[12px] leading-relaxed text-brand-900">
         <span className="font-semibold">What happens next:</span> the system

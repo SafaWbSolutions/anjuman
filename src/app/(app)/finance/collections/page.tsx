@@ -161,6 +161,13 @@ export default function CollectionsPage() {
     setBusyId(p.id);
     try {
       const receiptNo = await verifyPayment(p.id);
+      if (receiptNo === "PENDING-SECOND-APPROVAL") {
+        toast(
+          "Pehla approval ho gaya — ab doosra approver (Sadar ya Khajanchi) approve karega"
+        );
+        if (!isDemoMode) await load();
+        return;
+      }
       setPayments((prev) =>
         prev.map((x) =>
           x.id === p.id
@@ -331,6 +338,7 @@ export default function CollectionsPage() {
                     <p className="mt-1 text-[11.5px] text-ink-400">
                       {formatDate(p.createdAt, true)}
                       {p.enteredBy ? ` · entered by ${p.enteredBy}` : ""}
+                      {p.firstApprovedBy ? " · 1/2 approved" : ""}
                     </p>
                   </div>
                   <Badge tone="amber" dot>

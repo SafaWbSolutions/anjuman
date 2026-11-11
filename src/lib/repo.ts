@@ -190,6 +190,8 @@ function toPayment(r: Row): Payment {
     createdAt: r.created_at,
     settledAt: r.verified_at ?? undefined,
     note: r.note ?? undefined,
+    requiresDualApproval: Boolean(r.requires_dual_approval),
+    firstApprovedBy: r.first_approved_by ?? undefined,
   };
 }
 
@@ -665,7 +667,50 @@ export async function setFeeCycle(
   if (error) throw error;
 }
 
-/** Create every month's dues from the start month up to now (idempotent). */
+/** Backdated dues for one member — December 2025 se aaj tak, ek click. */
+export async function generateMemberDues(
+  memberId: string,
+  from: string,
+  to?: string | null
+): Promise<{ months: number; created: number; amountPaise: number; monthlyPaise: number }> {
+  if (isDemoMode) return { months: 0, created: 0, amountPaise: 0, monthlyPaise: 0 };
+
+  const { data, error } = await client().rpc("generate_member_dues", {
+    p_member: memberId,
+    p_from: from,
+    p_to: to ?? null,
+  });
+  if (error) throw error;
+
+  const r = (data ?? {}) as Row;
+  return {
+    months: num(r.months),
+    created: num(r.created),
+    amountPaise: num(r.amount_paise),
+    monthlyPaise: num(r.monthly_paise),
+  };
+}
+
+/** Member-side advance payment — stays pending until sadar + khajanchi approve. */
+export async function submitAdvancePayment(input: {
+  memberId: string;
+  amountPaise: number;
+  method: Payment["method"];
+  reference?: string;
+  note?: string;
+}): Promise<string> {
+  if (isDemoMode) return `demo-pay-${Date.now()}`;
+
+  const { data, error } = await client().rpc("submit_advance_payment", {
+    p_member: input.memberId,
+    p_amount: input.amountPaise,
+    p_method: input.method,
+    p_reference: input.reference ?? null,
+    p_note: input.note ?? null,
+  });
+  if (error) throw error;
+  return String(data);
+}
 export async function generateDuesRange(
   from?: string | null,
   to?: string | null

@@ -48,24 +48,30 @@ import {
   listNotices,
   listPayments,
   listTenants,
+  submitAdvancePayment,
   type WorkItem,
   type WorkQueue,
 } from "@/lib/repo";
 import { formatINR, formatDate, periodLabel, cn } from "@/lib/utils";
 import { activeTenant } from "@/lib/mock";
 import { ReceiptDrawer, receiptOf, type ReceiptInfo } from "@/components/receipt";
+import { FinanceOverview } from "@/components/finance-overview";
 import {
   Avatar,
   Badge,
   Button,
   Card,
   CardHeader,
+  Field,
+  Input,
   PageHeader,
+  Select,
   StatCard,
   StatusPill,
   TableWrap,
   Td,
   Th,
+  toast,
 } from "@/components/ui";
 import { BarPair, Donut, ProgressBar } from "@/components/charts";
 
@@ -320,6 +326,8 @@ function OfficeDashboard() {
       />
 
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
+
+      <FinanceOverview />
 
       {loading && !snapshot ? (
         <LoadingCard />
@@ -655,6 +663,10 @@ function MemberDashboard() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [receipt, setReceipt] = useState<ReceiptInfo | null>(null);
+  const [advAmount, setAdvAmount] = useState("");
+  const [advMethod, setAdvMethod] = useState<Payment["method"]>("upi");
+  const [advRef, setAdvRef] = useState("");
+  const [advBusy, setAdvBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -713,6 +725,33 @@ function MemberDashboard() {
     .reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0);
   const paid = invoices.reduce((s, i) => s + i.paidPaise, 0);
 
+  async function submitAdvance() {
+    if (!member) return;
+    const paise = Math.round((Number(advAmount) || 0) * 100);
+    if (paise <= 0) {
+      toast("Amount daalo", "error");
+      return;
+    }
+    setAdvBusy(true);
+    try {
+      await submitAdvancePayment({
+        memberId: member.id,
+        amountPaise: paise,
+        method: advMethod,
+        reference: advRef,
+        note: "Advance payment",
+      });
+      toast("Payment submit ho gayi — Sadar aur Khajanchi dono approve karenge");
+      setAdvAmount("");
+      setAdvRef("");
+      await load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Payment submit nahi hui", "error");
+    } finally {
+      setAdvBusy(false);
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -734,6 +773,8 @@ function MemberDashboard() {
       />
 
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
+
+      <FinanceOverview allowMemberList={false} />
 
       <div className="grid gap-5 lg:grid-cols-3">
         <Card className="lg:col-span-2 overflow-hidden">
@@ -836,6 +877,52 @@ function MemberDashboard() {
         </Card>
 
         <div className="space-y-5">
+          <Card>
+            <CardHeader
+              title="Advance payment"
+              subtitle="Apni taraf se payment — Sadar + Khajanchi approve karenge"
+            />
+            <div className="space-y-3 p-5">
+              <Field label="Amount (₹)">
+                <Input
+                  value={advAmount}
+                  onChange={(e) => setAdvAmount(e.target.value.replace(/[^\d.]/g, ""))}
+                  inputMode="decimal"
+                  placeholder="500"
+                />
+              </Field>
+              <Field label="Method">
+                <Select
+                  value={advMethod}
+                  onChange={(e) => setAdvMethod(e.target.value as Payment["method"])}
+                >
+                  <option value="upi">UPI</option>
+                  <option value="cash">Cash</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="gateway">Gateway</option>
+                </Select>
+              </Field>
+              <Field label="Reference / note">
+                <Input
+                  value={advRef}
+                  onChange={(e) => setAdvRef(e.target.value)}
+                  placeholder="UPI transaction id"
+                />
+              </Field>
+              <Button
+                className="w-full"
+                onClick={() => void submitAdvance()}
+                loading={advBusy}
+              >
+                <CreditCard className="h-4 w-4" /> Submit for approval
+              </Button>
+              <p className="text-[11px] leading-relaxed text-ink-500">
+                Pending rahegi jab tak Sadar aur Khajanchi dono approve na karein.
+                Receipt sirf verify hone ke baad banti hai.
+              </p>
+            </div>
+          </Card>
+
           <Card>
             <CardHeader title="Dues" subtitle="Pay before the 10th" />
             <div className="divide-y divide-ink-100">

@@ -112,6 +112,8 @@ export interface Payment {
   createdAt: string;
   settledAt?: string;
   note?: string;
+  requiresDualApproval?: boolean;
+  firstApprovedBy?: string;
 }
 
 export interface Expense {

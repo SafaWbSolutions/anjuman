@@ -253,7 +253,7 @@ export interface Integration {
   mode: "test" | "live";
   enabled: boolean;
   status: "connected" | "not_configured" | "error";
-  lastTestedAt?: string;
+  lastTestedAt?: string | null;
   maskedKey?: string;
 }
 

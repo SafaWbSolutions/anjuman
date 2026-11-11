@@ -916,6 +916,77 @@ export async function listTenants(): Promise<Tenant[]> {
   return (data ?? []).map(toTenant);
 }
 
+export interface Integration {
+  id: string;
+  tenantId: string;
+  scope: "platform" | "tenant";
+  type: "payment" | "sms" | "whatsapp" | "email" | "push";
+  provider: string;
+  mode: "test" | "live";
+  enabled: boolean;
+  config: Record<string, unknown>;
+  secretRef: string | null;
+  status: "not_configured" | "connected" | "error";
+  lastTestedAt: string | null;
+  createdAt: string;
+}
+
+function toIntegration(r: Row): Integration {
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    scope: r.scope ?? "tenant",
+    type: r.type,
+    provider: r.provider,
+    mode: r.mode,
+    enabled: r.enabled,
+    config: r.config ?? {},
+    secretRef: r.secret_ref ?? null,
+    status: r.status,
+    lastTestedAt: r.last_tested_at ?? null,
+    createdAt: r.created_at,
+  };
+}
+
+/** List integrations for this tenant. */
+export async function listIntegrations(): Promise<Integration[]> {
+  if (isDemoMode) return [];
+
+  const { data, error } = await client()
+    .from("integrations")
+    .select("*")
+    .eq("tenant_id", await myTenantId())
+    .order("type")
+    .order("provider");
+
+  if (error) throw error;
+  return (data ?? []).map(toIntegration);
+}
+
+/** Save (or create) an integration's encrypted secret. */
+export async function saveIntegrationSecret(
+  integrationId: string,
+  secret: Record<string, unknown>
+): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client().rpc("save_integration_secret", {
+    p_integration_id: integrationId,
+    p_secret: secret,
+  });
+  if (error) throw error;
+}
+
+/** Test an integration via the admin-test edge function. */
+export async function testIntegration(integrationId: string): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client().functions.invoke("admin-test", {
+    body: { integration_id: integrationId },
+  });
+  if (error) throw error;
+}
+
 export async function listApprovals(): Promise<Approval[]> {
   if (isDemoMode) return mockApprovals;
 

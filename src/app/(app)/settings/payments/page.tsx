@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CheckCircle2,
   CreditCard,
@@ -16,7 +16,8 @@ import {
   Smartphone,
   Zap,
 } from "lucide-react";
-import { activeTenant } from "@/lib/mock";
+import type { Integration, Tenant } from "@/lib/types";
+import { getCurrentTenant, listIntegrations, saveIntegrationSecret, testIntegration, saveTenantSettings, saveTenantProfile } from "@/lib/repo";
 import {
   Badge,
   Button,
@@ -34,6 +35,7 @@ import { cn } from "@/lib/utils";
 type Provider = "razorpay" | "cashfree" | "phonepe";
 
 interface GatewayState {
+  integration: Integration | null;
   enabled: boolean;
   keyId: string;
   keySecret: string;
@@ -41,12 +43,6 @@ interface GatewayState {
   tested: boolean;
   testing: boolean;
 }
-
-const INITIAL: Record<Provider, GatewayState> = {
-  razorpay: { enabled: false, keyId: "", keySecret: "", mode: "test", tested: false, testing: false },
-  cashfree: { enabled: false, keyId: "", keySecret: "", mode: "test", tested: false, testing: false },
-  phonepe: { enabled: false, keyId: "", keySecret: "", mode: "test", tested: false, testing: false },
-};
 
 const PROVIDER_LABEL: Record<Provider, string> = {
   razorpay: "Razorpay",
@@ -60,23 +56,181 @@ const PROVIDER_FEE: Record<Provider, string> = {
   phonepe: "1.99% + GST",
 };
 
+const PLACEHOLDER_KEY_ID: Record<Provider, string> = {
+  razorpay: "rzp_live_…",
+  cashfree: "app id",
+  phonepe: "merchant id",
+};
+
+const DEFAULT_INTEGRATION_CONFIG: Record<Provider, Record<string, string>> = {
+  razorpay: { key_id: "", key_secret: "" },
+  cashfree: { app_id: "", secret_key: "" },
+  phonepe: { merchant_id: "", salt_key: "", salt_index: "1" },
+};
+
 export default function PaymentsSettingsPage() {
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [upiEnabled, setUpiEnabled] = useState(true);
-  const [upiId, setUpiId] = useState(activeTenant.upiId);
   const [autoVerify, setAutoVerify] = useState(false);
-  const [gw, setGw] = useState(INITIAL);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Gateway local state
+  const [gw, setGw] = useState<Record<Provider, GatewayState>>({
+    razorpay: { integration: null, enabled: false, keyId: "", keySecret: "", mode: "test", tested: false, testing: false },
+    cashfree: { integration: null, enabled: false, keyId: "", keySecret: "", mode: "test", tested: false, testing: false },
+    phonepe: { integration: null, enabled: false, keyId: "", keySecret: "", mode: "test", tested: false, testing: false },
+  });
+
+  // Load data
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([getCurrentTenant(), listIntegrations()])
+      .then(([t, ints]) => {
+        if (!mounted) return;
+        setTenant(t);
+        setIntegrations(ints);
+
+        // Map integrations to gateway state
+        const nextGw: Record<Provider, GatewayState> = {
+          razorpay: { integration: null, enabled: false, keyId: "", keySecret: "", mode: "test", tested: false, testing: false },
+          cashfree: { integration: null, enabled: false, keyId: "", keySecret: "", mode: "test", tested: false, testing: false },
+          phonepe: { integration: null, enabled: false, keyId: "", keySecret: "", mode: "test", tested: false, testing: false },
+        };
+
+        for (const int of ints) {
+          if (int.type === "payment" && (int.provider in PROVIDER_LABEL)) {
+            const p = int.provider as Provider;
+            const cfg = int.config as Record<string, string> | undefined;
+            nextGw[p] = {
+              integration: int,
+              enabled: int.enabled,
+              keyId: cfg?.[Object.keys(DEFAULT_INTEGRATION_CONFIG[p])[0]] ?? "",
+              keySecret: "", // never returned to browser
+              mode: int.mode,
+              tested: int.status === "connected",
+              testing: false,
+            };
+          }
+        }
+
+        if (t) {
+          setUpiEnabled(Boolean(t.upiId));
+          setAutoVerify(true); // could be loaded from tenant_settings
+        }
+
+        setGw(nextGw);
+      })
+      .catch((e) => {
+        if (mounted) setError(e instanceof Error ? e.message : "Settings load nahi hui");
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   function update(p: Provider, patch: Partial<GatewayState>) {
     setGw((prev) => ({ ...prev, [p]: { ...prev[p], ...patch } }));
   }
 
-  function test(p: Provider) {
+  async function test(p: Provider) {
+    const s = gw[p];
+    if (!s.integration) return;
     update(p, { testing: true });
-    setTimeout(() => {
+    try {
+      await testIntegration(s.integration.id);
       update(p, { testing: false, tested: true });
       toast(`${PROVIDER_LABEL[p]} connection successful · test payment ₹1 created`);
-    }, 1200);
+    } catch (e) {
+      update(p, { testing: false, tested: false });
+      toast(e instanceof Error ? e.message : "Test failed", "error");
+    }
   }
+
+  async function saveGateway(p: Provider) {
+    const s = gw[p];
+    if (!s.integration) return;
+    if (!s.keyId.trim() || !s.keySecret.trim()) {
+      toast("Key ID aur secret dono bharein", "error");
+      return;
+    }
+    try {
+      const secret: Record<string, string> = {};
+      const keys = Object.keys(DEFAULT_INTEGRATION_CONFIG[p]);
+      secret[keys[0]] = s.keyId.trim();
+      secret[keys[1]] = s.keySecret.trim();
+      if (keys[2]) secret[keys[2]] = s.mode; // salt_index for phonepe
+
+      await saveIntegrationSecret(s.integration.id, secret);
+      toast(`${PROVIDER_LABEL[p]} keys saved · ready to test`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Save failed", "error");
+    }
+  }
+
+  async function toggleGateway(p: Provider) {
+    const s = gw[p];
+    if (!s.integration) return;
+    const newEnabled = !s.enabled;
+    // Note: enabling is done via the integration row update
+    // For now just update local state; actual enable requires status=connected
+    if (newEnabled && !s.tested) {
+      toast("Pehle test karein, phir enable karein", "error");
+      return;
+    }
+    update(p, { enabled: newEnabled });
+    // Could add an RPC to update integration enabled/status
+    toast(newEnabled ? `${PROVIDER_LABEL[p]} enabled` : `${PROVIDER_LABEL[p]} disabled`);
+  }
+
+  async function saveAll() {
+    if (!tenant) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await Promise.all([
+        saveTenantProfile({
+          upiId: tenant.upiId,
+        }),
+        saveTenantSettings({ autoVerifyGateway: autoVerify }),
+      ]);
+      toast("Payment settings saved");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+      toast(e instanceof Error ? e.message : "Save failed", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <>
+        <PageHeader eyebrow="Settings" title="Payments" description="Loading…" />
+        <Card className="flex items-center justify-center gap-2 p-10 text-[13px] text-ink-500">
+          Settings taiyaar ho rahe hain…
+        </Card>
+      </>
+    );
+  }
+
+  if (error && !tenant) {
+    return (
+      <>
+        <PageHeader eyebrow="Settings" title="Payments" />
+        <Card className="p-8 text-center border-red-200 bg-red-50">
+          <p className="text-red-700">{error}</p>
+        </Card>
+      </>
+    );
+  }
+
+  const t = tenant!;
 
   return (
     <>
@@ -90,6 +244,13 @@ export default function PaymentsSettingsPage() {
           </Badge>
         }
       />
+
+      {error && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-[12.5px] text-red-700">
+          <span className="mt-0.5">⚠</span>
+          <span className="flex-1">{error}</span>
+        </div>
+      )}
 
       {/* ── Compliance banner ───────────────────────────────── */}
       <Card className="mb-5 border-brand-200 bg-brand-50/60">
@@ -136,14 +297,14 @@ export default function PaymentsSettingsPage() {
               <div className="space-y-4">
                 <Field label="UPI ID (VPA)" hint="Must belong to the anjuman's bank account, not a personal one.">
                   <Input
-                    value={upiId}
-                    onChange={(e) => setUpiId(e.target.value)}
+                    value={t.upiId}
+                    onChange={(e) => setTenant({ ...t, upiId: e.target.value })}
                     placeholder="anjuman@upi"
                     className="font-mono"
                   />
                 </Field>
                 <Field label="Account holder name">
-                  <Input defaultValue={activeTenant.name} />
+                  <Input value={t.name} onChange={(e) => setTenant({ ...t, name: e.target.value })} />
                 </Field>
                 <div className="flex items-center justify-between rounded-xl border border-ink-100 px-3.5 py-3">
                   <div>
@@ -165,7 +326,7 @@ export default function PaymentsSettingsPage() {
                       Only if you use a PSP that supports webhooks
                     </p>
                   </div>
-                  <Switch checked={autoVerify} onChange={setAutoVerify} />
+                  <Switch checked={autoVerify} onChange={(v) => setAutoVerify(v)} />
                 </div>
               </div>
 
@@ -182,7 +343,7 @@ export default function PaymentsSettingsPage() {
                   })}
                 </div>
                 <p className="mt-2 text-center font-mono text-[10px] text-ink-500">
-                  {upiId || "anjuman@upi"}
+                  {t.upiId || "anjuman@upi"}
                 </p>
                 <Badge tone="green" className="mt-1">
                   Live QR
@@ -226,7 +387,7 @@ export default function PaymentsSettingsPage() {
                       {s.enabled && <Badge tone="brand">Enabled</Badge>}
                       <Switch
                         checked={s.enabled}
-                        onChange={(v) => update(p, { enabled: v })}
+                        onChange={() => toggleGateway(p)}
                       />
                     </div>
 
@@ -235,7 +396,7 @@ export default function PaymentsSettingsPage() {
                         <Input
                           value={s.keyId}
                           onChange={(e) => update(p, { keyId: e.target.value })}
-                          placeholder={p === "cashfree" ? "app id" : "rzp_live_…"}
+                          placeholder={PLACEHOLDER_KEY_ID[p]}
                           className="font-mono text-[12px]"
                         />
                       </Field>
@@ -260,6 +421,14 @@ export default function PaymentsSettingsPage() {
                         variant="secondary"
                         size="sm"
                         loading={s.testing}
+                        onClick={() => saveGateway(p)}
+                      >
+                        <FlaskConical className="h-3.5 w-3.5" /> Save keys
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={s.testing}
                         onClick={() => test(p)}
                       >
                         <FlaskConical className="h-3.5 w-3.5" /> Test connection
@@ -267,12 +436,9 @@ export default function PaymentsSettingsPage() {
                       <Button
                         size="sm"
                         disabled={!s.tested}
-                        onClick={() => {
-                          update(p, { enabled: true });
-                          toast(`${PROVIDER_LABEL[p]} enabled for live collection`);
-                        }}
+                        onClick={() => toggleGateway(p)}
                       >
-                        <Zap className="h-3.5 w-3.5" /> Enable
+                        <Zap className="h-3.5 w-3.5" /> {s.enabled ? "Disable" : "Enable"}
                       </Button>
                       {s.tested && (
                         <span className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-emerald-600">
@@ -287,7 +453,7 @@ export default function PaymentsSettingsPage() {
           </Card>
 
           <div className="flex justify-end">
-            <Button onClick={() => toast("Payment settings saved")}>
+            <Button onClick={saveAll} loading={saving}>
               <CheckCircle2 className="h-4 w-4" /> Save settings
             </Button>
           </div>

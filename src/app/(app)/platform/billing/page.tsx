@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   Banknote,
@@ -12,7 +12,8 @@ import {
   TrendingUp,
   Wallet,
 } from "lucide-react";
-import { tenants } from "@/lib/mock";
+import type { Tenant } from "@/lib/types";
+import { listTenants } from "@/lib/repo";
 import {
   Badge,
   Button,
@@ -32,20 +33,58 @@ import {
 } from "@/components/ui";
 import { formatDate, formatINR } from "@/lib/utils";
 
-const INVOICES = [
-  { id: "SUB-2026-041", tenant: "Bharauli Masjid Committee", amount: 120000, status: "paid", issued: "2026-06-06", due: "2026-06-20" },
-  { id: "SUB-2026-040", tenant: "Darbhanga Central Anjuman", amount: 0, status: "paid", issued: "2026-09-01", due: "2026-09-15" },
-  { id: "SUB-2026-039", tenant: "Karimpur Muslim Society", amount: 60000, status: "pending", issued: "2026-10-01", due: "2026-10-15" },
-  { id: "SUB-2026-038", tenant: "Noorpur Jamia Committee", amount: 120000, status: "paid", issued: "2026-08-11", due: "2026-08-25" },
-  { id: "SUB-2026-037", tenant: "Rasoolpur Masjid Trust", amount: 250000, status: "paid", issued: "2026-07-02", due: "2026-07-16" },
-];
-
 export default function BillingPage() {
   const [retry, setRetry] = useState(true);
   const [autoSuspend, setAutoSuspend] = useState(true);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const collected = INVOICES.filter((i) => i.status === "paid").reduce((s, i) => s + i.amount, 0);
-  const pending = INVOICES.filter((i) => i.status === "pending").reduce((s, i) => s + i.amount, 0);
+  useEffect(() => {
+    let mounted = true;
+    listTenants()
+      .then((t) => {
+        if (mounted) {
+          setTenants(t);
+          setLoading(false);
+        }
+      })
+      .catch((e) => {
+        if (mounted) {
+          setError(e instanceof Error ? e.message : "Tenants load nahi hue");
+          setLoading(false);
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const activeTenants = tenants.filter((t) => t.status === "active");
+  const collected = 0; // Would come from platform invoices table
+  const pending = 0;   // Would come from platform invoices table
+
+  if (loading) {
+    return (
+      <>
+        <PageHeader eyebrow="Platform" title="Billing gateway" description="Loading…" />
+        <Card className="flex items-center justify-center gap-2 p-10 text-[13px] text-ink-500">
+          Billing data taiyaar ho raha hai…
+        </Card>
+      </>
+    );
+  }
+
+  if (error) {
+    return (
+      <>
+        <PageHeader eyebrow="Platform" title="Billing gateway" />
+        <Card className="p-8 text-center border-red-200 bg-red-50">
+          <p className="text-red-700">{error}</p>
+        </Card>
+      </>
+    );
+  }
 
   return (
     <>
@@ -60,10 +99,17 @@ export default function BillingPage() {
         }
       />
 
+      {error && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-[12.5px] text-red-700">
+          <span className="mt-0.5">⚠</span>
+          <span className="flex-1">{error}</span>
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Collected" value={formatINR(collected)} sub="Subscription revenue" icon={Banknote} tone="green" />
-        <StatCard label="Outstanding" value={formatINR(pending)} sub="1 invoice" icon={AlertTriangle} tone="amber" />
-        <StatCard label="Active subscriptions" value={String(tenants.filter((t) => t.status === "active").length)} sub={`${tenants.length} total tenants`} icon={Repeat} tone="brand" />
+        <StatCard label="Outstanding" value={formatINR(pending)} sub="Pending invoices" icon={AlertTriangle} tone="amber" />
+        <StatCard label="Active subscriptions" value={String(activeTenants.length)} sub={`${tenants.length} total tenants`} icon={Repeat} tone="brand" />
         <StatCard label="Annual run rate" value={formatINR(Math.round(tenants.reduce((s, t) => s + (t.planCycle === "yearly" ? t.planAmountPaise : t.planAmountPaise * 12), 0)))} sub="Based on current plans" icon={TrendingUp} tone="blue" />
       </div>
 
@@ -84,31 +130,12 @@ export default function BillingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
-                {INVOICES.map((i) => (
-                  <tr key={i.id} className="hover:bg-ink-50/60">
-                    <Td>
-                      <span className="font-mono text-[11.5px] text-ink-700">{i.id}</span>
-                    </Td>
-                    <Td className="text-[12.5px] text-ink-800">{i.tenant}</Td>
-                    <Td className="text-[12px] text-ink-500">{formatDate(i.issued)}</Td>
-                    <Td className="text-[12px] text-ink-500">{formatDate(i.due)}</Td>
-                    <Td>
-                      <StatusPill status={i.status} />
-                    </Td>
-                    <Td className="text-right font-medium">
-                      {i.amount === 0 ? "Free" : formatINR(i.amount)}
-                    </Td>
-                    <Td className="text-right">
-                      <button
-                        onClick={() => toast("Invoice downloaded")}
-                        className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
-                        aria-label="Download"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                      </button>
-                    </Td>
-                  </tr>
-                ))}
+                <tr className="hover:bg-ink-50/60">
+                  <td className="text-center py-8 text-ink-500" colSpan={7} style={{ display: "table-cell" }}>
+                    Platform invoices table coming soon — for now each tenant's subscription
+                    is managed individually in the Tenants page.
+                  </td>
+                </tr>
               </tbody>
             </TableWrap>
           </Card>
@@ -133,13 +160,13 @@ export default function BillingPage() {
                 </Select>
               </Field>
               <Field label="Key ID">
-                <Input defaultValue="rzp_live_••••••••4821" className="font-mono text-[12px]" />
+                <Input placeholder="rzp_live_…" className="font-mono text-[12px]" />
               </Field>
               <Field label="Key secret">
-                <Input type="password" defaultValue="secret" className="font-mono text-[12px]" />
+                <Input type="password" placeholder="••••" className="font-mono text-[12px]" />
               </Field>
               <Field label="Webhook secret" className="sm:col-span-2">
-                <Input type="password" defaultValue="whsec" className="font-mono text-[12px]" />
+                <Input type="password" placeholder="whsec" className="font-mono text-[12px]" />
               </Field>
             </div>
             <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 px-5 py-4">
@@ -149,9 +176,6 @@ export default function BillingPage() {
               <Button size="sm" onClick={() => toast("Billing gateway saved")}>
                 <CheckCircle2 className="h-3.5 w-3.5" /> Save
               </Button>
-              <span className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-emerald-600">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Connected · last tested today
-              </span>
             </div>
           </Card>
 
@@ -199,19 +223,25 @@ export default function BillingPage() {
           <Card>
             <CardHeader title="Upcoming renewals" subtitle="Next 90 days" />
             <div className="divide-y divide-ink-100">
-              {tenants.map((t) => (
-                <div key={t.id} className="flex items-center justify-between px-5 py-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-[12px] font-medium text-ink-800">{t.name}</p>
-                    <p className="text-[10.5px] text-ink-500">
-                      {t.expiresAt ? formatDate(t.expiresAt) : "No expiry"}
-                    </p>
-                  </div>
-                  <span className="text-[12px] font-medium text-ink-900">
-                    {t.planAmountPaise ? formatINR(t.planAmountPaise) : "Free"}
-                  </span>
+              {tenants.length === 0 ? (
+                <div className="px-5 py-8 text-center text-ink-500">
+                  No tenants found
                 </div>
-              ))}
+              ) : (
+                tenants.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between px-5 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[12px] font-medium text-ink-800">{t.name}</p>
+                      <p className="text-[10.5px] text-ink-500">
+                        {t.expiresAt ? formatDate(t.expiresAt) : "No expiry"}
+                      </p>
+                    </div>
+                    <span className="text-[12px] font-medium text-ink-900">
+                      {t.planAmountPaise ? formatINR(t.planAmountPaise) : "Free"}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </Card>
 

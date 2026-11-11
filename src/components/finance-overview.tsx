@@ -384,8 +384,8 @@ export function FinanceOverview({
     cards.push({
       key: "members",
       label: "Total members",
-      sub: "Paid, pending, since",
-      value: members.length,
+      sub: "Active members · paid, pending, since",
+      value: activeMembers.length,
       icon: Users,
       tone: "blue",
       table: () => ({

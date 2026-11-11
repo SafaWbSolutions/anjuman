@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Ban,
   Building2,
@@ -14,8 +14,8 @@ import {
   ShieldAlert,
   UserCog,
 } from "lucide-react";
-import { tenants as ALL_TENANTS } from "@/lib/mock";
 import type { Tenant, TenantStatus } from "@/lib/types";
+import { listTenants, saveTenantProfile } from "@/lib/repo";
 import {
   Badge,
   Button,
@@ -42,10 +42,33 @@ export default function TenantsPage() {
   const [status, setStatus] = useState("all");
   const [selected, setSelected] = useState<Tenant | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    listTenants()
+      .then((t) => {
+        if (mounted) {
+          setTenants(t);
+          setLoading(false);
+        }
+      })
+      .catch((e) => {
+        if (mounted) {
+          setError(e instanceof Error ? e.message : "Tenants load nahi hue");
+          setLoading(false);
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const rows = useMemo(
     () =>
-      ALL_TENANTS.filter((t) => {
+      tenants.filter((t) => {
         if (status !== "all" && t.status !== status) return false;
         const term = q.trim().toLowerCase();
         if (!term) return true;
@@ -56,14 +79,36 @@ export default function TenantsPage() {
           t.district.toLowerCase().includes(term)
         );
       }),
-    [q, status]
+    [q, status, tenants]
   );
 
-  const active = ALL_TENANTS.filter((t) => t.status === "active");
-  const revenue = ALL_TENANTS.reduce(
+  const active = tenants.filter((t) => t.status === "active");
+  const revenue = tenants.reduce(
     (s, t) => s + (t.planCycle === "yearly" ? t.planAmountPaise / 12 : t.planAmountPaise),
     0
   );
+
+  if (loading) {
+    return (
+      <>
+        <PageHeader eyebrow="Platform" title="Anjumans" description="Loading…" />
+        <Card className="flex items-center justify-center gap-2 p-10 text-[13px] text-ink-500">
+          Tenants list taiyaar ho raha hai…
+        </Card>
+      </>
+    );
+  }
+
+  if (error) {
+    return (
+      <>
+        <PageHeader eyebrow="Platform" title="Anjumans" />
+        <Card className="p-8 text-center border-red-200 bg-red-50">
+          <p className="text-red-700">{error}</p>
+        </Card>
+      </>
+    );
+  }
 
   return (
     <>
@@ -79,10 +124,10 @@ export default function TenantsPage() {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total anjumans" value={String(ALL_TENANTS.length)} sub={`${active.length} active`} icon={Building2} tone="brand" />
+        <StatCard label="Total anjumans" value={String(tenants.length)} sub={`${active.length} active`} icon={Building2} tone="brand" />
         <StatCard label="MRR" value={formatINR(Math.round(revenue))} sub="Recurring revenue" icon={CalendarClock} tone="green" />
-        <StatCard label="Members served" value={ALL_TENANTS.reduce((s, t) => s + t.membersCount, 0).toLocaleString("en-IN")} sub="Across all tenants" icon={Eye} tone="blue" />
-        <StatCard label="Needs attention" value={String(ALL_TENANTS.filter((t) => t.status !== "active").length)} sub="Expired / trial" icon={ShieldAlert} tone="amber" />
+        <StatCard label="Members served" value={tenants.reduce((s, t) => s + t.membersCount, 0).toLocaleString("en-IN")} sub="Across all tenants" icon={Eye} tone="blue" />
+        <StatCard label="Needs attention" value={String(tenants.filter((t) => t.status !== "active").length)} sub="Expired / trial" icon={ShieldAlert} tone="amber" />
       </div>
 
       <div className="mt-5 mb-4 flex flex-wrap items-center gap-3">
@@ -199,8 +244,28 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
     multiMasjid: false,
     auditPack: true,
   });
+  const [saving, setSaving] = useState(false);
 
   if (!tenant) return null;
+
+  async function handleSave() {
+    if (!tenant) return;
+    setSaving(true);
+    try {
+      await saveTenantProfile({
+        planType,
+        planAmountPaise: planType === "free" ? 0 : Math.round(Number(amount) * 100),
+        status,
+        expiresAt: tenant.expiresAt,
+      });
+      toast("Tenant settings saved");
+      onClose();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Save failed", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <Drawer
@@ -222,7 +287,7 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
             <Button variant="secondary" size="sm" onClick={() => toast("Impersonation session started")}>
               <UserCog className="h-3.5 w-3.5" /> Impersonate
             </Button>
-            <Button size="sm" onClick={() => { toast("Tenant settings saved"); onClose(); }}>
+            <Button size="sm" onClick={handleSave} loading={saving}>
               <CheckCircle2 className="h-3.5 w-3.5" /> Save
             </Button>
           </div>
@@ -267,15 +332,13 @@ function TenantDrawer({ tenant, onClose }: { tenant: Tenant | null; onClose: () 
       <div className="mt-5">
         <p className="mb-2 text-[12.5px] font-semibold text-ink-800">Feature flags</p>
         <div className="divide-y divide-ink-100 rounded-xl border border-ink-100">
-          {(
-            [
-              { key: "payments", label: "Online payments", hint: "Mode A + B collection" },
-              { key: "whatsapp", label: "WhatsApp reminders", hint: "Uses tenant's own provider" },
-              { key: "idCards", label: "ID card generator", hint: "Bulk PDF + QR" },
-              { key: "multiMasjid", label: "Multiple masjids", hint: "Pro feature" },
-              { key: "auditPack", label: "Audit pack export", hint: "For chartered accountants" },
-            ] as const
-          ).map((f) => (
+          {([
+            { key: "payments", label: "Online payments", hint: "Mode A + B collection" },
+            { key: "whatsapp", label: "WhatsApp reminders", hint: "Uses tenant's own provider" },
+            { key: "idCards", label: "ID card generator", hint: "Bulk PDF + QR" },
+            { key: "multiMasjid", label: "Multiple masjids", hint: "Pro feature" },
+            { key: "auditPack", label: "Audit pack export", hint: "For chartered accountants" },
+          ] as const).map((f) => (
             <div key={f.key} className="flex items-center justify-between px-3.5 py-3">
               <div>
                 <p className="text-[12.5px] font-medium text-ink-800">{f.label}</p>

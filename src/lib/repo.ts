@@ -649,6 +649,10 @@ export interface TenantProfilePatch {
   address?: string;
   logoUrl?: string;
   themeColor?: string;
+  planType?: "free" | "fixed" | "custom";
+  planAmountPaise?: number;
+  status?: "active" | "trial" | "read_only" | "suspended";
+  expiresAt?: string | null;
 }
 
 /** Update the tenant profile (sadar/secretary only). */
@@ -669,6 +673,10 @@ export async function saveTenantProfile(patch: TenantProfilePatch): Promise<void
   if (patch.address !== undefined) row.address = patch.address;
   if (patch.logoUrl !== undefined) row.logo_url = patch.logoUrl;
   if (patch.themeColor !== undefined) row.theme_color = patch.themeColor;
+  if (patch.planType !== undefined) row.plan_type = patch.planType;
+  if (patch.planAmountPaise !== undefined) row.plan_amount_paise = patch.planAmountPaise;
+  if (patch.status !== undefined) row.status = patch.status;
+  if (patch.expiresAt !== undefined) row.expires_at = patch.expiresAt;
 
   if (Object.keys(row).length === 0) return;
 

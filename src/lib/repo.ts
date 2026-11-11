@@ -667,8 +667,7 @@ export async function setFeeCycle(
   if (error) throw error;
 }
 
-/** Backdated dues for one member — December 2025 se aaj tak, ek click. */
-export async function generateMemberDues(
+/** Backdated dues for one member — December 2025 se aaj tak, ek click. */export async function generateMemberDues(
   memberId: string,
   from: string,
   to?: string | null
@@ -2271,6 +2270,66 @@ export async function generateInvoices(period?: string): Promise<{ created: numb
 
   const r = (data ?? {}) as Row;
   return { created: num(r.created) };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Platform · global accounts (Super Admin)
+// ═══════════════════════════════════════════════════════════════
+
+export interface PlatformAccount {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: Role;
+  tenantId: string | null;
+  tenantName: string;
+  active: boolean;
+  memberCode: string;
+  createdAt: string;
+}
+
+export async function listAllAccounts(): Promise<PlatformAccount[]> {
+  if (isDemoMode) return [];
+
+  const { data, error } = await client().rpc("list_all_accounts");
+  if (error) throw error;
+
+  return ((data ?? []) as Row[]).map((r) => ({
+    id: r.id,
+    name: r.full_name ?? "—",
+    email: r.email ?? "",
+    phone: r.phone ?? "",
+    role: r.role,
+    tenantId: r.tenant_id ?? null,
+    tenantName: r.tenant_name ?? "Platform",
+    active: Boolean(r.is_active),
+    memberCode: r.member_code ?? "",
+    createdAt: r.created_at,
+  }));
+}
+
+export async function setAccountRole(id: string, role: Role): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client().rpc("set_account_role", {
+    p_profile: id,
+    p_role: role,
+  });
+  if (error) throw error;
+}
+
+export async function setAccountActive(
+  id: string,
+  active: boolean
+): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client().rpc("set_account_active", {
+    p_profile: id,
+    p_active: active,
+  });
+  if (error) throw error;
 }
 
 export interface NewNotice {

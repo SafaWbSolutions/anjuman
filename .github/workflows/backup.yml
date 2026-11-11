@@ -1,25 +1,34 @@
 name: Nightly backup
 
-# Dumps the Postgres database and uploads it to Cloudflare R2.
-# Free-tier friendly: a compressed dump of a village-sized anjuman is
-# a few hundred kilobytes.
+# Dumps the whole Postgres database every night and keeps a copy in
+# three places (whichever are configured):
 #
-# Two safety layers:
-#   1. R2 upload (needs the R2_* secrets below)
-#   2. GitHub artifact copy (90 days) — works even before R2 is set up
+#   1. GitHub artifact, 90 days  — always on, zero setup
+#   2. Cloudflare R2 bucket     — only when R2_* secrets exist
+#   3. Run summary + size check — so a silent failure is visible
 #
 # Required secret:
 #   SUPABASE_DB_URL = postgresql://postgres:<password>@db.<ref>.supabase.co:5432/postgres
-# Optional R2 secrets:
+# Optional secrets:
+#   BACKUP_PASSPHRASE  = encrypt the dump (AES-256) before upload
 #   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET
+#
+# Restore: see BACKUP.md
 
 on:
   schedule:
     - cron: "0 21 * * *" # 02:30 IST
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/backup.yml"
 
 permissions:
   contents: read
+
+concurrency:
+  group: nightly-backup
+  cancel-in-progress: false
 
 jobs:
   backup:
@@ -41,22 +50,47 @@ jobs:
         if: steps.check.outputs.ready == 'true'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y -qq postgresql-client
 
       - name: Dump database
         if: steps.check.outputs.ready == 'true'
         env:
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
+          set -euo pipefail
           STAMP=$(date -u +%Y/%m/%d)
           FILE="anjuman-$(date -u +%Y%m%d-%H%M).sql.gz"
-          pg_dump "$DB_URL" --no-owner --no-privileges | gzip -9 > "$FILE"
+          pg_dump "$DB_URL" --no-owner --no-privileges --clean --if-exists | gzip -9 > "$FILE"
+          gzip -t "$FILE" # fail loudly on a truncated dump
+          SIZE=$(stat -c %s "$FILE")
+          if [ "$SIZE" -lt 2000 ]; then
+            echo "::error::Dump is suspiciously small ($SIZE bytes) — refusing to publish."
+            exit 1
+          fi
           echo "FILE=$FILE" >> "$GITHUB_ENV"
           echo "PREFIX=backups/$STAMP" >> "$GITHUB_ENV"
+          echo "SIZE_KB=$((SIZE / 1024))" >> "$GITHUB_ENV"
           ls -lh "$FILE"
 
-      - name: Upload to R2
+      - name: Encrypt dump (optional)
         if: steps.check.outputs.ready == 'true'
+        env:
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "${PASS:-}" ]; then
+            echo "No BACKUP_PASSPHRASE set — artifact will be a plain .sql.gz (GitHub artifact access is repository-scoped)."
+            exit 0
+          fi
+          gpg --batch --yes --symmetric --cipher-algo AES256 \
+            --passphrase "$PASS" --output "$FILE.gpg" "$FILE"
+          shred -u "$FILE"
+          echo "FILE=$FILE.gpg" >> "$GITHUB_ENV"
+          echo "ENCRYPTED=true" >> "$GITHUB_ENV"
+          ls -lh "$FILE.gpg"
+
+      - name: Upload to R2 (optional, never fails the run)
+        if: steps.check.outputs.ready == 'true'
+        continue-on-error: true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -64,20 +98,31 @@ jobs:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          if [ -z "$R2_BUCKET" ]; then
-            echo "R2 is not configured — skipping upload, the GitHub artifact copy below is enough."
+          if [ -z "${R2_BUCKET:-}" ]; then
+            echo "R2 is not configured — the GitHub artifact copy below is the backup."
             exit 0
           fi
+          if ! command -v aws >/dev/null 2>&1; then
+            pip install --quiet awscli
+          fi
           aws s3 cp "$FILE" "s3://$R2_BUCKET/$PREFIX/$FILE" --endpoint-url "$R2_ENDPOINT"
+          echo "R2_USED=yes ($R2_BUCKET)" >> "$GITHUB_ENV"
 
       - name: Keep a GitHub copy (90 days)
-        if: steps.check.outputs.ready == 'true'
+        if: always() && env.FILE != ''
         uses: actions/upload-artifact@v4
         with:
           name: anjuman-backup-${{ github.run_id }}
-          path: "*.sql.gz"
+          path: "*.sql.gz*"
           retention-days: 90
 
-      - name: Keep the run in the summary
+      - name: Summary
         if: always()
-        run: echo "Backup ${{ env.FILE }} → r2://${{ secrets.R2_BUCKET }}/${{ env.PREFIX }}/ (plus GitHub artifact)" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          {
+            echo "### Nightly backup"
+            echo "- File: \`${FILE:-not created}\`"
+            echo "- Size: ${SIZE_KB:-?} KB"
+            echo "- Encrypted: ${ENCRYPTED:-no}"
+            echo "- R2: ${R2_USED:-not configured}"
+          } >> "$GITHUB_STEP_SUMMARY"

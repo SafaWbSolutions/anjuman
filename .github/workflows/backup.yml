@@ -89,8 +89,8 @@ jobs:
         if: steps.check.outputs.ready == 'true'
         run: |
           set -uo pipefail
-          STAMP=$(date -u +%Y/%m/%d)
-          FILE="anjuman-$(date -u +%Y%m%d-%H%M).sql.gz"
+          STAMP=$(TZ=Asia/Kolkata date +%Y/%m/%d)
+          FILE="anjuman-$(TZ=Asia/Kolkata date +%Y%m%d-%H%M).sql.gz"
           if ! pg_dump "$DB_URL_DUMP" --no-owner --no-privileges --clean --if-exists > dump.sql 2> dump.err; then
             ERR=$(tr '\n' ' ' < dump.err | tail -c 600)
             echo "::error::pg_dump failed: $ERR"

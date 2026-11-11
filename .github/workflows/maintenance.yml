@@ -1,0 +1,53 @@
+name: Daily maintenance (SQL)
+
+# Runs the in-database automation from GitHub as a fallback, in case the
+# project's pg_cron scheduler is not firing. It is idempotent, so running
+# it in addition to pg_cron (when that works) is safe.
+#
+# Needs one secret:
+#   SUPABASE_DB_URL = postgresql://postgres:<password>@db.oytcwpemrrnqrbrtonyu.supabase.co:5432/postgres
+#
+# Until it exists this workflow skips itself instead of failing.
+
+on:
+  schedule:
+    - cron: "45 19 * * *" # 01:15 IST, before the nightly backup
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for database URL secret
+        id: check
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SUPABASE_DB_URL secret is not set — skipping maintenance."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install PostgreSQL client
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Run keepalive + daily maintenance
+        if: steps.check.outputs.ready == 'true'
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$DB_URL" -v ON_ERROR_STOP=1 \
+            -c "select public.keepalive();" \
+            -c "select public.run_daily_maintenance();"
+
+      - name: Summary
+        if: always()
+        run: echo "Maintenance finished at $(date -u +%H:%M:%S) UTC" >> "$GITHUB_STEP_SUMMARY"

@@ -55,6 +55,37 @@ select public.run_daily_maintenance();
 > hai, isliye pause nahi hoga. GitHub par `.github/workflows/keepalive.yml` bhi
 > roz ek REST ping bhejta hai — do layer ka safety net.
 
+### 1.2 GitHub Actions (fallback + backup)
+
+Repo me teen workflows hain:
+
+| File | Kab | Kaam | Secret chahiye? |
+| --- | --- | --- | --- |
+| `.github/workflows/keepalive.yml` | roz 07:45 IST | Supabase REST ko ping | ❌ nahi |
+| `.github/workflows/maintenance.yml` | roz 01:15 IST | `keepalive()` + `run_daily_maintenance()` | `SUPABASE_DB_URL` |
+| `.github/workflows/backup.yml` | roz 02:30 IST | database dump → R2 + GitHub artifact | `SUPABASE_DB_URL` (+ optional R2) |
+
+`SUPABASE_DB_URL` ek hi secret dono ke liye:
+
+```text
+GitHub repo → Settings → Secrets and variables → Actions → New repository secret
+
+Name : SUPABASE_DB_URL
+Value: postgresql://postgres:<db-password>@db.oytcwpemrrnqrbrtonyu.supabase.co:5432/postgres
+```
+
+Jab tak secret nahi hai, wo do workflows khud ko skip kar dete hain (fail nahi hote).
+
+**Agar `pg_cron` job na chale:** Dashboard → Database → Extensions → `pg_cron`
+ko off/on karo (isse launcher restart hota hai), phir check karo:
+
+```sql
+select jobname, schedule, active from cron.job;
+select * from cron.job_run_details order by start_time desc limit 5;
+```
+
+`pg_cron` chale ya na chale, `maintenance.yml` roz kaam karta rahega.
+
 ---
 
 ## 2. Pehli baar setup (15 minute)

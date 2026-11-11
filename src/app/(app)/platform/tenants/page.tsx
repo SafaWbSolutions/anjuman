@@ -31,6 +31,7 @@ import {
   Field,
   Input,
   PageHeader,
+  PhoneInput,
   SearchInput,
   Select,
   StatCard,
@@ -504,8 +505,8 @@ function NewTenantDrawer({ open, onClose }: { open: boolean; onClose: () => void
         <Field label="Member ID prefix" hint="3–4 letters, unique across the platform.">
           <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="BHR" maxLength={4} className="font-mono uppercase" />
         </Field>
-        <Field label="Sadar's mobile" className="sm:col-span-2">
-          <Input value={sadarPhone} onChange={(e) => setSadarPhone(e.target.value)} placeholder="+91 …" inputMode="tel" />
+        <Field label="Sadar's mobile" className="sm:col-span-2" hint="Sirf 10 digit">
+          <PhoneInput value={sadarPhone} onChange={setSadarPhone} />
         </Field>
         <Field label="Plan">
           <Select value={plan} onChange={(e) => setPlan(e.target.value as any)}>

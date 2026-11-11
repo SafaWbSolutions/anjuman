@@ -23,6 +23,7 @@ import {
   Field,
   Input,
   PageHeader,
+  PhoneInput,
   Select,
   Switch,
   toast,
@@ -50,6 +51,7 @@ const ROLE_OPTIONS = MATRIX_ROLES.map((r) => ({
 
 export default function RolesPage() {
   const [addOpen, setAddOpen] = useState(false);
+  const [invitePhone, setInvitePhone] = useState("");
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -280,8 +282,8 @@ export default function RolesPage() {
           <Field label="Full name" className="sm:col-span-2">
             <Input placeholder="e.g. Imran Qureshi" />
           </Field>
-          <Field label="Mobile">
-            <Input placeholder="+91 …" inputMode="tel" />
+          <Field label="Mobile" hint="Sirf 10 digit">
+            <PhoneInput value={invitePhone} onChange={setInvitePhone} />
           </Field>
           <Field label="Email">
             <Input type="email" placeholder="name@example.com" />

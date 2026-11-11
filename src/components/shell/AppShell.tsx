@@ -99,6 +99,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           role={user.role}
           onSignOut={signOut}
           userName={user.name}
+          userPhoto={user.photoUrl}
         />
       </aside>
 
@@ -124,6 +125,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               role={user.role}
               onSignOut={signOut}
               userName={user.name}
+              userPhoto={user.photoUrl}
             />
           </aside>
         </div>
@@ -185,13 +187,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 )}
               </Link>
 
-              <div className="hidden items-center gap-2.5 border-l border-ink-200 pl-3 sm:flex">
-                <Avatar name={user.name} size="sm" />
+              <Link
+                href="/profile/"
+                className="hidden items-center gap-2.5 border-l border-ink-200 pl-3 transition hover:opacity-80 sm:flex"
+                aria-label="My profile"
+              >
+                <Avatar name={user.name} size="sm" photoUrl={user.photoUrl} />
                 <div className="hidden leading-tight xl:block">
                   <p className="text-[13px] font-semibold text-ink-900">{user.name}</p>
                   <p className="text-[11px] text-ink-500">{roleLabel(user.role)}</p>
                 </div>
-              </div>
+              </Link>
               <button
                 onClick={() => signOut()}
                 className="rounded-xl p-2 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
@@ -221,6 +227,7 @@ function SidebarContent({
   role,
   onSignOut,
   userName,
+  userPhoto,
 }: {
   sections: ReturnType<typeof navForRole>;
   pathname: string;
@@ -228,6 +235,7 @@ function SidebarContent({
   role: Role;
   onSignOut: () => void;
   userName: string;
+  userPhoto?: string | null;
 }) {
   return (
     <>
@@ -306,11 +314,17 @@ function SidebarContent({
 
       <div className="border-t border-white/10 p-3">
         <div className="flex items-center gap-2.5 rounded-xl px-2 py-2">
-          <Avatar name={userName} size="sm" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[12.5px] font-medium text-white">{userName}</p>
-            <p className="truncate text-[10.5px] text-ink-400">{ROLE_LABEL[role]}</p>
-          </div>
+          <Link
+            href="/profile/"
+            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg transition hover:opacity-80"
+            aria-label="My profile"
+          >
+            <Avatar name={userName} size="sm" photoUrl={userPhoto} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12.5px] font-medium text-white">{userName}</p>
+              <p className="truncate text-[10.5px] text-ink-400">{ROLE_LABEL[role]}</p>
+            </div>
+          </Link>
           <button
             onClick={onSignOut}
             className="rounded-lg p-1.5 text-ink-400 hover:bg-white/10 hover:text-white"

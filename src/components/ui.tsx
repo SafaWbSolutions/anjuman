@@ -209,12 +209,27 @@ export function Avatar({
   name,
   size = "md",
   className,
+  photoUrl,
 }: {
   name: string;
   size?: "sm" | "md" | "lg";
   className?: string;
+  photoUrl?: string | null;
 }) {
   const idx = [...name].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR_COLORS.length;
+  const sizeClass =
+    size === "sm" ? "h-8 w-8" : size === "md" ? "h-10 w-10" : "h-14 w-14";
+
+  if (photoUrl) {
+    return (
+      <img
+        src={photoUrl}
+        alt={name}
+        className={cn("inline-flex shrink-0 rounded-full object-cover", sizeClass, className)}
+      />
+    );
+  }
+
   return (
     <span
       className={cn(
@@ -263,6 +278,53 @@ export function Input({
     <div className="relative">
       <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
       <input className={cn("input pl-9", className)} {...props} />
+    </div>
+  );
+}
+
+/* Indian mobile input: fixed +91, digits only, hard-locked to 10. */
+export function PhoneInput({
+  value,
+  onChange,
+  className,
+  placeholder = "98765 43210",
+  disabled,
+  id,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  id?: string;
+}) {
+  const digits = value.replace(/\D/g, "").slice(0, 10);
+  return (
+    <div
+      className={cn(
+        "flex items-stretch overflow-hidden rounded-xl border border-ink-200 bg-white transition focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20",
+        disabled && "bg-ink-50 opacity-70",
+        className
+      )}
+    >
+      <span className="flex items-center border-r border-ink-200 bg-ink-50 px-3 text-[13px] font-medium text-ink-600">
+        +91
+      </span>
+      <input
+        id={id}
+        type="tel"
+        inputMode="numeric"
+        autoComplete="tel-national"
+        maxLength={10}
+        value={digits}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value.replace(/\D/g, "").slice(0, 10))}
+        placeholder={placeholder}
+        className="w-full min-w-0 bg-transparent px-3 py-2.5 text-[14px] tracking-wide text-ink-900 outline-none placeholder:tracking-normal placeholder:text-ink-400"
+      />
+      <span className="flex items-center pr-3 text-[11px] tabular-nums text-ink-400">
+        {digits.length}/10
+      </span>
     </div>
   );
 }

@@ -1,24 +1,37 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Ban,
   Building,
+  Camera,
+  Loader2,
+  Pencil,
+  Save,
   Search,
   UserCheck,
   UserPlus,
   Users,
-  Loader2,
 } from "lucide-react";
 import type { Member } from "@/lib/types";
-import { listAllMembers, setMemberActiveAcrossTenants, updateMemberAcrossTenants } from "@/lib/repo";
 import {
+  listAllMembers,
+  saveMemberDetails,
+  setMemberActiveAcrossTenants,
+  updateMemberAcrossTenants,
+  uploadAvatar,
+} from "@/lib/repo";
+import { useAuth } from "@/lib/auth";
+import {
+  Avatar,
   Badge,
   Button,
   Card,
+  Drawer,
   Field,
   Input,
   PageHeader,
+  PhoneInput,
   SearchInput,
   Select,
   StatCard,
@@ -39,6 +52,7 @@ export default function SuperAdminMembersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
+  const [editing, setEditing] = useState<(Member & { tenantName: string }) | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -179,6 +193,13 @@ export default function SuperAdminMembersPage() {
                 <Td className="text-right">
                   <div className="flex justify-end gap-1">
                     <button
+                      onClick={() => setEditing(m)}
+                      className="rounded-lg p-1.5 text-ink-500 hover:bg-ink-100"
+                      aria-label="Edit member"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
                       onClick={() => {
                         const next = m.status === "active" ? false : true;
                         setSaving(m.id);
@@ -215,6 +236,15 @@ export default function SuperAdminMembersPage() {
           No members found.
         </Card>
       )}
+
+      <PlatformMemberDrawer
+        member={editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => {
+          setEditing(null);
+          void loadMembers();
+        }}
+      />
     </>
   );
 
@@ -229,4 +259,202 @@ export default function SuperAdminMembersPage() {
       setLoading(false);
     }
   }
+}
+
+function PlatformMemberDrawer({
+  member,
+  onClose,
+  onSaved,
+}: {
+  member: (Member & { tenantName: string }) | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { user } = useAuth();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const [name, setName] = useState("");
+  const [father, setFather] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [house, setHouse] = useState("");
+  const [mohalla, setMohalla] = useState("");
+  const [blood, setBlood] = useState("");
+  const [type, setType] = useState<Member["type"]>("member");
+  const [status, setStatus] = useState<Member["status"]>("active");
+  const [fee, setFee] = useState("0");
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!member) return;
+    setName(member.name);
+    setFather(member.fatherName);
+    setPhone(member.phone);
+    setEmail(member.email ?? "");
+    setHouse(member.household);
+    setMohalla(member.mohalla);
+    setBlood(member.bloodGroup ?? "");
+    setType(member.type);
+    setStatus(member.status);
+    setFee(String(member.feePaise / 100));
+    setPhotoUrl(member.photoUrl ?? null);
+  }, [member?.id]);
+
+  if (!member) return null;
+
+  async function pickPhoto(file: File | undefined) {
+    if (!file || !user) return;
+    if (!file.type.startsWith("image/") || file.size > 3 * 1024 * 1024) {
+      toast("JPG/PNG chuno, max 3 MB", "error");
+      return;
+    }
+    setUploading(true);
+    try {
+      const url = await uploadAvatar(file, user.id);
+      setPhotoUrl(url);
+      toast("Photo upload ho gayi — Save dabao");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Photo upload nahi hui", "error");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function save() {
+    if (!member) return;
+    if (!name.trim()) return toast("Naam likho", "error");
+    const cleanPhone = phone.replace(/\D/g, "");
+    if (cleanPhone && cleanPhone.length !== 10) {
+      return toast("Mobile number 10 digit ka hona chahiye", "error");
+    }
+    setSaving(true);
+    try {
+      await saveMemberDetails(member.id, {
+        name,
+        fatherName: father,
+        phone: cleanPhone,
+        email,
+        household: house,
+        mohalla,
+        bloodGroup: blood,
+        photoUrl,
+      });
+      await updateMemberAcrossTenants(member.id, member.tenantId, {
+        type,
+        status,
+        feePaise: Math.round(Number(fee || "0") * 100),
+      });
+      toast("Member update ho gaya");
+      onSaved();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Save nahi hua", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Drawer
+      open={!!member}
+      onClose={onClose}
+      title={`Edit · ${member.name}`}
+      subtitle={`${member.code} · ${member.tenantName}`}
+      width="max-w-xl"
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={() => void save()} loading={saving}>
+            <Save className="h-4 w-4" /> Save changes
+          </Button>
+        </div>
+      }
+    >
+      <div className="flex items-center gap-4">
+        <div className="relative">
+          <Avatar name={name || member.name} size="lg" photoUrl={photoUrl} />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-brand-600 text-white shadow hover:bg-brand-700 disabled:opacity-60"
+            aria-label="Change photo"
+          >
+            {uploading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Camera className="h-3.5 w-3.5" />
+            )}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => void pickPhoto(e.target.files?.[0])}
+          />
+        </div>
+        <p className="text-[12px] leading-relaxed text-ink-500">
+          Photo ID card aur member portal par dikhegi. JPG/PNG · max 3 MB.
+        </p>
+      </div>
+
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <Field label="Full name" className="sm:col-span-2">
+          <Input value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field label="Father's name">
+          <Input value={father} onChange={(e) => setFather(e.target.value)} />
+        </Field>
+        <Field label="Mobile number" hint="Sirf 10 digit">
+          <PhoneInput value={phone} onChange={setPhone} />
+        </Field>
+        <Field label="Email">
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </Field>
+        <Field label="House number">
+          <Input value={house} onChange={(e) => setHouse(e.target.value)} />
+        </Field>
+        <Field label="Mohalla">
+          <Input value={mohalla} onChange={(e) => setMohalla(e.target.value)} />
+        </Field>
+        <Field label="Blood group">
+          <Input
+            value={blood}
+            onChange={(e) => setBlood(e.target.value.toUpperCase())}
+            maxLength={3}
+          />
+        </Field>
+        <Field label="Type">
+          <Select value={type} onChange={(e) => setType(e.target.value as Member["type"])}>
+            <option value="member">Member</option>
+            <option value="donor">Donor</option>
+            <option value="imam">Imam</option>
+            <option value="muazzin">Muazzin</option>
+            <option value="staff">Staff</option>
+          </Select>
+        </Field>
+        <Field label="Status">
+          <Select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as Member["status"])}
+          >
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="pending">Pending</option>
+          </Select>
+        </Field>
+        <Field label="Monthly chanda (₹)" className="sm:col-span-2">
+          <Input value={fee} onChange={(e) => setFee(e.target.value)} inputMode="numeric" />
+        </Field>
+      </div>
+    </Drawer>
+  );
 }

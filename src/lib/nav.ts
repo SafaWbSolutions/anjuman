@@ -58,6 +58,7 @@ export const NAV: NavSection[] = [
   {
     title: "Settings",
     items: [
+      { label: "My Profile", href: "/profile/", icon: "UserRound", roles: ALL },
       { label: "Anjuman Profile", href: "/settings/anjuman/", icon: "Building2", roles: ["sadar", "secretary"] },
       { label: "Payments", href: "/settings/payments/", icon: "CreditCard", roles: ["sadar", "khajanchi"] },
       { label: "Notifications", href: "/settings/notifications/", icon: "BellRing", roles: ["sadar", "secretary"] },

@@ -149,6 +149,7 @@ function toMember(r: Row): Member {
     name: r.name,
     fatherName: r.father_name ?? "",
     phone: r.phone ?? "",
+    email: r.email ?? "",
     household: r.household ?? "",
     mohalla: r.mohalla ?? "",
     type: r.member_type,
@@ -786,6 +787,7 @@ export async function updateMemberAcrossTenants(
     name?: string;
     fatherName?: string;
     phone?: string;
+    email?: string;
     household?: string;
     mohalla?: string;
     type?: MemberType;
@@ -793,6 +795,7 @@ export async function updateMemberAcrossTenants(
     feePaise?: number;
     bloodGroup?: string;
     concession?: string;
+    photoUrl?: string;
   }
 ): Promise<void> {
   if (isDemoMode) return;
@@ -801,6 +804,7 @@ export async function updateMemberAcrossTenants(
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.fatherName !== undefined) row.father_name = patch.fatherName;
   if (patch.phone !== undefined) row.phone = patch.phone;
+  if (patch.email !== undefined) row.email = patch.email;
   if (patch.household !== undefined) row.household = patch.household;
   if (patch.mohalla !== undefined) row.mohalla = patch.mohalla;
   if (patch.type !== undefined) row.member_type = patch.type;
@@ -808,6 +812,7 @@ export async function updateMemberAcrossTenants(
   if (patch.feePaise !== undefined) row.fee_paise = patch.feePaise;
   if (patch.bloodGroup !== undefined) row.blood_group = patch.bloodGroup;
   if (patch.concession !== undefined) row.concession = patch.concession;
+  if (patch.photoUrl !== undefined) row.photo_url = patch.photoUrl;
 
   if (Object.keys(row).length === 0) return;
 
@@ -2016,10 +2021,106 @@ export async function createMemberLogin(input: {
   return { email: String(data.email) };
 }
 
+export interface MyProfilePatch {
+  name: string;
+  phone: string;
+  email: string;
+  photoUrl?: string | null;
+}
+
+/** Update the signed-in user's own name / mobile / email / photo. */
+export async function saveMyProfile(patch: MyProfilePatch): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client().rpc("update_my_profile", {
+    p_full_name: patch.name.trim(),
+    p_phone: patch.phone,
+    p_email: patch.email,
+    p_photo_url: patch.photoUrl ?? null,
+  });
+  if (error) throw error;
+}
+
+/** Upload a profile picture to the public avatars bucket; returns its URL. */
+export async function uploadAvatar(file: File, userId: string): Promise<string> {
+  if (isDemoMode) return "";
+
+  const ext =
+    (file.name.split(".").pop() ?? "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  const path = `${userId}/avatar-${Date.now()}.${ext}`;
+  const { error } = await client()
+    .storage.from("avatars")
+    .upload(path, file, {
+      cacheControl: "3600",
+      upsert: true,
+      contentType: file.type || "image/jpeg",
+    });
+  if (error) throw error;
+
+  return client().storage.from("avatars").getPublicUrl(path).data.publicUrl;
+}
+
+export interface MemberDetailsPatch {
+  name: string;
+  fatherName?: string;
+  phone?: string;
+  email?: string;
+  household?: string;
+  mohalla?: string;
+  bloodGroup?: string;
+  photoUrl?: string | null;
+}
+
+/** Sadar / secretary / platform admin edits a member's full details. */
+export async function saveMemberDetails(
+  memberId: string,
+  patch: MemberDetailsPatch
+): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client().rpc("update_member_details", {
+    p_member_id: memberId,
+    p_name: patch.name.trim(),
+    p_father_name: patch.fatherName ?? "",
+    p_phone: patch.phone ?? "",
+    p_email: patch.email ?? "",
+    p_household: patch.household ?? "",
+    p_mohalla: patch.mohalla ?? "",
+    p_photo_url: patch.photoUrl ?? null,
+    p_blood_group: patch.bloodGroup ?? "",
+  });
+  if (error) throw error;
+}
+
+/** The members row linked to the signed-in account, if any. */
+export async function getMyMember(): Promise<Member | null> {
+  if (isDemoMode) return null;
+
+  const { data: auth } = await client().auth.getUser();
+  if (!auth.user) return null;
+
+  const { data: profile, error: profileError } = await client()
+    .from("profiles")
+    .select("member_id")
+    .eq("id", auth.user.id)
+    .maybeSingle();
+  if (profileError) throw profileError;
+  if (!profile?.member_id) return null;
+
+  const { data, error } = await client()
+    .from("members")
+    .select("*")
+    .eq("id", profile.member_id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? toMember(data) : null;
+}
+
 export interface NewMember {
   name: string;
   fatherName?: string;
   phone?: string;
+  email?: string;
   household?: string;
   mohalla?: string;
   memberType?: Member["type"];
@@ -2040,6 +2141,7 @@ export async function createMember(input: NewMember): Promise<Member> {
       name: input.name,
       fatherName: input.fatherName ?? "",
       phone: input.phone ?? "",
+      email: input.email ?? "",
       household: input.household ?? "",
       mohalla: input.mohalla ?? "",
       type: input.memberType ?? "member",
@@ -2057,6 +2159,7 @@ export async function createMember(input: NewMember): Promise<Member> {
       name: input.name.trim(),
       father_name: input.fatherName?.trim() || null,
       phone: input.phone?.trim() || null,
+      email: input.email?.trim().toLowerCase() || null,
       household: input.household?.trim() || null,
       mohalla: input.mohalla?.trim() || null,
       member_type: input.memberType ?? "member",

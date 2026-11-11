@@ -90,6 +90,8 @@ interface AuthState {
   signIn: (role: Role, email?: string, password?: string) => Promise<void>;
   signOut: () => Promise<void>;
   switchRole: (role: Role) => void;
+  refreshUser: () => Promise<void>;
+  updateLocalUser: (patch: Partial<SessionUser>) => void;
   can: (roles: Role[]) => boolean;
 }
 
@@ -213,9 +215,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user]
   );
 
+  const refreshUser = useCallback(async () => {
+    if (demoMode || !supabase) return;
+    const { data } = await supabase.auth.getSession();
+    const session = data.session;
+    if (!session) return;
+    const fresh = await loadSessionUser(session.user.id);
+    if (!fresh) return;
+    fresh.email = session.user.email ?? fresh.email;
+    setUser(fresh);
+  }, [demoMode]);
+
+  const updateLocalUser = useCallback((patch: Partial<SessionUser>) => {
+    setUser((current) => (current ? { ...current, ...patch } : current));
+  }, []);
+
   const value = useMemo(
-    () => ({ user, ready, demoMode, signIn, signOut, switchRole, can }),
-    [user, ready, demoMode, signIn, signOut, switchRole, can]
+    () => ({ user, ready, demoMode, signIn, signOut, switchRole, refreshUser, updateLocalUser, can }),
+    [user, ready, demoMode, signIn, signOut, switchRole, refreshUser, updateLocalUser, can]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

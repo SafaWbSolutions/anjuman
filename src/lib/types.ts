@@ -61,6 +61,7 @@ export interface Member {
   name: string;
   fatherName: string;
   phone: string;
+  email?: string;
   household: string;
   mohalla: string;
   type: MemberType;
@@ -295,6 +296,8 @@ export interface SessionUser {
   role: Role;
   tenantId: string | null;
   tenantName: string;
+  /** Profile picture, if the user uploaded one. */
+  photoUrl?: string | null;
   /** Members row linked to this profile, for the member portal. */
   memberId?: string | null;
 }

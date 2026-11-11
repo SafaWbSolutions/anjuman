@@ -21,6 +21,7 @@ import {
   Field,
   Input,
   PageHeader,
+  PhoneInput,
   Select,
   toast,
 } from "@/components/ui";
@@ -192,13 +193,16 @@ export default function AnjumanProfilePage() {
           <Card>
             <CardHeader title="Contact" subtitle="Shown to members for queries" />
             <div className="grid gap-4 p-5 sm:grid-cols-2">
-              <Field label="Committee phone">
-                <Input value={t.phone} onChange={(e) => setTenant({ ...t, phone: e.target.value })} />
-              </Field>
-              <Field label="WhatsApp number">
-                <Input
+              <Field label="Committee phone" hint="Sirf 10 digit">
+                <PhoneInput
                   value={t.phone}
-                  onChange={(e) => setTenant({ ...t, phone: e.target.value })}
+                  onChange={(v) => setTenant({ ...t, phone: v })}
+                />
+              </Field>
+              <Field label="WhatsApp number" hint="Sirf 10 digit">
+                <PhoneInput
+                  value={t.phone}
+                  onChange={(v) => setTenant({ ...t, phone: v })}
                   placeholder="Same as committee phone"
                 />
               </Field>

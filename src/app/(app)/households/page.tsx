@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Home, Search, Users, Wallet } from "lucide-react";
-import { members, invoices } from "@/lib/mock";
+import type { Member, Invoice } from "@/lib/types";
+import { listMembers, listInvoices } from "@/lib/repo";
 import { formatINR, cn } from "@/lib/utils";
 import {
   Avatar,
@@ -18,13 +19,37 @@ import {
 interface Household {
   number: string;
   mohalla: string;
-  members: typeof members;
+  members: Member[];
   billed: number;
   paid: number;
 }
 
 export default function HouseholdsPage() {
   const [q, setQ] = useState("");
+  const [members, setMembers] = useState<Member[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([listMembers(), listInvoices()])
+      .then(([m, i]) => {
+        if (mounted) {
+          setMembers(m);
+          setInvoices(i);
+        }
+      })
+      .catch((e) => {
+        if (mounted) setError(e instanceof Error ? e.message : "Households load nahi ho sake");
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const households = useMemo<Household[]>(() => {
     const map = new Map<string, Household>();
@@ -54,20 +79,35 @@ export default function HouseholdsPage() {
     return [...map.values()].sort((a, b) =>
       `${a.mohalla}${a.number}`.localeCompare(`${b.mohalla}${b.number}`)
     );
-  }, []);
+  }, [members, invoices]);
 
-  const filtered = households.filter((h) => {
-    const term = q.trim().toLowerCase();
-    if (!term) return true;
-    return (
-      h.number.includes(term) ||
-      h.mohalla.toLowerCase().includes(term) ||
-      h.members.some((m) => m.name.toLowerCase().includes(term))
-    );
-  });
+  const filtered = useMemo(
+    () =>
+      households.filter((h) => {
+        const term = q.trim().toLowerCase();
+        if (!term) return true;
+        return (
+          h.number.includes(term) ||
+          h.mohalla.toLowerCase().includes(term) ||
+          h.members.some((m) => m.name.toLowerCase().includes(term))
+        );
+      }),
+    [households, q]
+  );
 
   const totalBilled = households.reduce((s, h) => s + h.billed, 0);
   const totalPaid = households.reduce((s, h) => s + h.paid, 0);
+
+  if (loading) {
+    return (
+      <>
+        <PageHeader eyebrow="Community" title="Households" description="Loading…" />
+        <Card className="flex items-center justify-center gap-2 p-10 text-[13px] text-ink-500">
+          Households taiyaar ho rahe hain…
+        </Card>
+      </>
+    );
+  }
 
   return (
     <>
@@ -76,6 +116,16 @@ export default function HouseholdsPage() {
         title="Households"
         description="Group members by house to see one family's combined dues and payment behaviour."
       />
+
+      {error && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-[12.5px] text-red-700">
+          <span className="mt-0.5">⚠</span>
+          <span className="flex-1">{error}</span>
+          <button className="font-semibold underline" onClick={() => window.location.reload()}>
+            Retry
+          </button>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Households" value={String(households.length)} icon={Home} tone="brand" />

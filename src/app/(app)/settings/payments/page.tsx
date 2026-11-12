@@ -19,7 +19,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { Integration, Tenant } from "@/lib/types";
-import { getCurrentTenant, listIntegrations, saveIntegrationSecret, testIntegration, saveTenantSettings, saveTenantProfile, uploadPaymentQr } from "@/lib/repo";
+import { getCurrentTenant, listIntegrations, saveIntegrationSecret, testIntegration, savePaymentSettings, uploadPaymentQr } from "@/lib/repo";
 import {
   Badge,
   Button,
@@ -219,20 +219,17 @@ export default function PaymentsSettingsPage() {
     setSaving(true);
     setError(null);
     try {
-      await Promise.all([
-        saveTenantProfile({
-          upiId: tenant.upiId,
-          upiQrUrl: tenant.upiQrUrl ?? null,
-          upiEnabled,
-          autoVerifyUpi: autoVerify,
-          bankName: tenant.bankName ?? "",
-          bankAccountName: tenant.bankAccountName ?? "",
-          bankAccountNo: tenant.bankAccountNo ?? "",
-          bankIfsc: tenant.bankIfsc ?? "",
-          bankBranch: tenant.bankBranch ?? "",
-        }),
-        saveTenantSettings({ autoVerifyGateway: autoVerify }),
-      ]);
+      await savePaymentSettings({
+        upiId: tenant.upiId,
+        upiQrUrl: tenant.upiQrUrl ?? null,
+        upiEnabled,
+        autoVerifyUpi: autoVerify,
+        bankName: tenant.bankName ?? "",
+        bankAccountName: tenant.bankAccountName ?? "",
+        bankAccountNo: tenant.bankAccountNo ?? "",
+        bankIfsc: tenant.bankIfsc ?? "",
+        bankBranch: tenant.bankBranch ?? "",
+      });
       toast("Payment settings saved");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -338,7 +335,11 @@ export default function PaymentsSettingsPage() {
                   />
                 </Field>
                 <Field label="Account holder name">
-                  <Input value={t.name} onChange={(e) => setTenant({ ...t, name: e.target.value })} />
+                  <Input
+                    value={t.bankAccountName ?? ""}
+                    onChange={(e) => setTenant({ ...t, bankAccountName: e.target.value })}
+                    placeholder="Anjuman ka naam"
+                  />
                 </Field>
                 <div className="flex items-center justify-between rounded-xl border border-ink-100 px-3.5 py-3">
                   <div>

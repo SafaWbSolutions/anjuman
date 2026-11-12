@@ -863,6 +863,38 @@ export async function saveTenantProfileForTenant(
   if (error) throw error;
 }
 
+/** Khajanchi-safe payment settings write (scoped RPC). */
+export interface PaymentSettingsPatch {
+  upiId?: string;
+  upiQrUrl?: string | null;
+  upiEnabled: boolean;
+  autoVerifyUpi: boolean;
+  bankName?: string;
+  bankAccountName?: string;
+  bankAccountNo?: string;
+  bankIfsc?: string;
+  bankBranch?: string;
+}
+
+export async function savePaymentSettings(
+  patch: PaymentSettingsPatch
+): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client().rpc("save_payment_settings", {
+    p_upi_id: patch.upiId ?? null,
+    p_upi_qr_url: patch.upiQrUrl ?? null,
+    p_upi_enabled: patch.upiEnabled,
+    p_auto_verify_upi: patch.autoVerifyUpi,
+    p_bank_name: patch.bankName ?? null,
+    p_bank_account_name: patch.bankAccountName ?? null,
+    p_bank_account_no: patch.bankAccountNo ?? null,
+    p_bank_ifsc: patch.bankIfsc ?? null,
+    p_bank_branch: patch.bankBranch ?? null,
+  });
+  if (error) throw error;
+}
+
 /** Create a new anjuman record — super admin only. */
 export async function createTenantRecord(profile: {
   code: string;

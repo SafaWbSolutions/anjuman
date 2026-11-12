@@ -21,6 +21,7 @@ on:
   push:
     paths:
       - "supabase/migrations/0038_fix_dashboard_settled_at.sql"
+      - ".github/workflows/migrate.yml"
 
 permissions:
   contents: read
@@ -83,24 +84,33 @@ jobs:
           echo "Applying $FILE"
           psql "$DB_URL_RUN" -v ON_ERROR_STOP=1 -f "$FILE"
 
-      - name: Verify dashboard function no longer uses settled_at
+      - name: Verify dashboard function uses verified_at
         if: steps.check.outputs.ready == 'true'
         run: |
           psql "$DB_URL_RUN" -v ON_ERROR_STOP=1 <<'SQL'
           do $$
+          declare
+            v_src text;
           begin
-            if exists (
-              select 1
+            select p.prosrc into v_src
               from pg_proc p
               join pg_namespace n on n.oid = p.pronamespace
-              where n.nspname = 'public'
-                and p.proname = 'dashboard_snapshot'
-                and p.prosrc like '%settled_at%'
-            ) then
-              raise exception 'dashboard_snapshot still references settled_at';
+             where n.nspname = 'public'
+               and p.proname = 'dashboard_snapshot'
+             limit 1;
+
+            if v_src is null then
+              raise exception 'dashboard_snapshot not found';
+            end if;
+            -- Only reject the buggy expression, not a comment that names it.
+            if v_src like '%coalesce(settled_at%' then
+              raise exception 'dashboard_snapshot still references coalesce(settled_at, ...)';
+            end if;
+            if v_src not like '%coalesce(verified_at, created_at)%' then
+              raise exception 'dashboard_snapshot is missing coalesce(verified_at, created_at)';
             end if;
           end $$;
-          select 'dashboard_snapshot OK' as result;
+          select 'dashboard_snapshot OK (uses verified_at)' as result;
           SQL
 
       - name: Summary

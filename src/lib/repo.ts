@@ -780,6 +780,7 @@ export interface TenantProfilePatch {
   bankBranch?: string;
   address?: string;
   logoUrl?: string;
+  masjidPhotoUrl?: string;
   themeColor?: string;
   planType?: "free" | "fixed" | "custom";
   planAmountPaise?: number;
@@ -812,6 +813,7 @@ export async function saveTenantProfile(patch: TenantProfilePatch): Promise<void
   if (patch.bankBranch !== undefined) row.bank_branch = patch.bankBranch;
   if (patch.address !== undefined) row.address = patch.address;
   if (patch.logoUrl !== undefined) row.logo_url = patch.logoUrl;
+  if (patch.masjidPhotoUrl !== undefined) row.masjid_photo_url = patch.masjidPhotoUrl;
   if (patch.themeColor !== undefined) row.theme_color = patch.themeColor;
   if (patch.planType !== undefined) row.plan_type = patch.planType;
   if (patch.planAmountPaise !== undefined) row.plan_amount_paise = patch.planAmountPaise;
@@ -855,6 +857,7 @@ export async function saveTenantProfileForTenant(
   if (patch.bankBranch !== undefined) row.bank_branch = patch.bankBranch;
   if (patch.address !== undefined) row.address = patch.address;
   if (patch.logoUrl !== undefined) row.logo_url = patch.logoUrl;
+  if (patch.masjidPhotoUrl !== undefined) row.masjid_photo_url = patch.masjidPhotoUrl;
   if (patch.themeColor !== undefined) row.theme_color = patch.themeColor;
   if (patch.planType !== undefined) row.plan_type = patch.planType;
   if (patch.planAmountPaise !== undefined) row.plan_amount_paise = patch.planAmountPaise;

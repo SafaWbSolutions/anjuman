@@ -612,13 +612,21 @@ function MemberCard({
       <div className="flex flex-1 gap-2.5 px-3 py-2">
         <div className="flex flex-col items-center gap-1">
           <div className="flex h-[17mm] w-[14mm] items-center justify-center overflow-hidden rounded-[1.5mm] bg-ink-100 ring-1 ring-ink-200">
-            <span className="text-[15px] font-semibold text-ink-500">
-              {member.name
-                .split(" ")
-                .slice(0, 2)
-                .map((p) => p[0])
-                .join("")}
-            </span>
+            {member.photoUrl ? (
+              <img
+                src={member.photoUrl}
+                alt={member.name}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span className="text-[15px] font-semibold text-ink-500">
+                {member.name
+                  .split(" ")
+                  .slice(0, 2)
+                  .map((p) => p[0])
+                  .join("")}
+              </span>
+            )}
           </div>
           <span className="rounded bg-brand-50 px-1 py-0.5 text-[5.5px] font-semibold uppercase text-brand-700">
             {member.type}

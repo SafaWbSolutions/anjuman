@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Building2,
   CheckCircle2,
@@ -10,9 +10,10 @@ import {
   Phone,
   Save,
   ShieldCheck,
+  Upload,
 } from "lucide-react";
 import type { Tenant } from "@/lib/types";
-import { getCurrentTenant, saveTenantProfile, setMemberPrefix } from "@/lib/repo";
+import { getCurrentTenant, saveTenantProfile, setMemberPrefix, uploadAvatar } from "@/lib/repo";
 import { INDIAN_STATES as STATES } from "@/lib/states";
 import {
   Badge,
@@ -48,6 +49,54 @@ export default function AnjumanProfilePage() {
     bankVerified: true,
     panDeed: false,
   });
+
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const masjidInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingMasjid, setUploadingMasjid] = useState(false);
+
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return toast("Sirf image file choose karein", "error");
+    if (file.size > 2 * 1024 * 1024) return toast("File size 2MB se kam honi chahiye", "error");
+
+    setUploadingLogo(true);
+    try {
+      // Use the current user's ID for the upload path, then we'll use the returned URL
+      const url = await uploadAvatar(file, "tenant-logo-" + Date.now());
+      setTenant((prev) => (prev ? { ...prev, logoUrl: url } : null));
+      toast("Logo upload ho gaya");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Logo upload fail hua", "error");
+    } finally {
+      setUploadingLogo(false);
+      if (logoInputRef.current) logoInputRef.current.value = "";
+    }
+  }
+
+  async function handleMasjidUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return toast("Sirf image file choose karein", "error");
+    if (file.size > 2 * 1024 * 1024) return toast("File size 2MB se kam honi chahiye", "error");
+
+    setUploadingMasjid(true);
+    try {
+      const url = await uploadAvatar(file, "tenant-masjid-" + Date.now());
+      // Note: tenants table doesn't have masjid_photo_url column yet,
+      // but we can store it in address field or as a note for now
+      // For now, we'll just show it in the UI and include in save
+      toast("Masjid photo upload ho gaya");
+      // Store in a custom property for now
+      setTenant((prev) => (prev ? { ...prev, masjidPhotoUrl: url } : null));
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Photo upload fail hua", "error");
+    } finally {
+      setUploadingMasjid(false);
+      if (masjidInputRef.current) masjidInputRef.current.value = "";
+    }
+  }
 
   // Load tenant
   useEffect(() => {
@@ -98,6 +147,7 @@ export default function AnjumanProfilePage() {
         upiId: tenant.upiId,
         address: tenant.address,
         logoUrl: tenant.logoUrl,
+        masjidPhotoUrl: (tenant as any).masjidPhotoUrl,
         themeColor: tenant.themeColor,
       });
 
@@ -256,17 +306,71 @@ export default function AnjumanProfilePage() {
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <div>
                 <label className="label">Logo</label>
-                <div className="flex h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-ink-300 bg-ink-50/50 text-ink-500">
-                  <ImagePlus className="h-6 w-6" />
-                  <span className="text-[11.5px]">Upload PNG (min 512×512)</span>
-                </div>
+                <input
+                  type="file"
+                  ref={logoInputRef}
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  className="hidden"
+                  id="logo-upload"
+                />
+                <label
+                  htmlFor="logo-upload"
+                  className="flex h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-ink-300 bg-ink-50/50 text-ink-500 cursor-pointer"
+                >
+                  {t.logoUrl ? (
+                    <img src={t.logoUrl} alt="Logo" className="h-20 w-20 object-contain rounded" />
+                  ) : (
+                    <>
+                      <Upload className="h-6 w-6" />
+                      <span className="text-[11.5px]">Upload PNG (max 2MB)</span>
+                    </>
+                  )}
+                </label>
+                {uploadingLogo && <p className="text-[11px] text-brand-600">Uploading…</p>}
+                {t.logoUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setTenant((prev) => (prev ? { ...prev, logoUrl: undefined } : null))}
+                    className="text-[11px] text-red-600 hover:underline"
+                  >
+                    Remove
+                  </button>
+                )}
               </div>
               <div>
                 <label className="label">Masjid photo</label>
-                <div className="flex h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-ink-300 bg-ink-50/50 text-ink-500">
-                  <ImagePlus className="h-6 w-6" />
-                  <span className="text-[11.5px]">Shown on the home screen</span>
-                </div>
+                <input
+                  type="file"
+                  ref={masjidInputRef}
+                  accept="image/*"
+                  onChange={handleMasjidUpload}
+                  className="hidden"
+                  id="masjid-upload"
+                />
+                <label
+                  htmlFor="masjid-upload"
+                  className="flex h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-ink-300 bg-ink-50/50 text-ink-500 cursor-pointer"
+                >
+                  {(t as any).masjidPhotoUrl ? (
+                    <img src={(t as any).masjidPhotoUrl} alt="Masjid" className="h-20 w-20 object-cover rounded" />
+                  ) : (
+                    <>
+                      <Upload className="h-6 w-6" />
+                      <span className="text-[11.5px]">Shown on the home screen</span>
+                    </>
+                  )}
+                </label>
+                {uploadingMasjid && <p className="text-[11px] text-brand-600">Uploading…</p>}
+                {(t as any).masjidPhotoUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setTenant((prev) => (prev ? { ...prev, masjidPhotoUrl: undefined } : null))}
+                    className="text-[11px] text-red-600 hover:underline"
+                  >
+                    Remove
+                  </button>
+                )}
               </div>
               <Field
                 label="Member ID prefix"

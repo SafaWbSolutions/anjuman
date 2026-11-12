@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { Tenant } from "@/lib/types";
 import { getCurrentTenant, saveTenantProfile, setMemberPrefix } from "@/lib/repo";
+import { INDIAN_STATES as STATES } from "@/lib/states";
 import {
   Badge,
   Button,
@@ -25,46 +26,6 @@ import {
   Select,
   toast,
 } from "@/components/ui";
-
-const STATES = [
-  "Andhra Pradesh",
-  "Arunachal Pradesh",
-  "Assam",
-  "Bihar",
-  "Chhattisgarh",
-  "Goa",
-  "Gujarat",
-  "Haryana",
-  "Himachal Pradesh",
-  "Jharkhand",
-  "Karnataka",
-  "Kerala",
-  "Madhya Pradesh",
-  "Maharashtra",
-  "Manipur",
-  "Meghalaya",
-  "Mizoram",
-  "Nagaland",
-  "Odisha",
-  "Punjab",
-  "Rajasthan",
-  "Sikkim",
-  "Tamil Nadu",
-  "Telangana",
-  "Tripura",
-  "Uttar Pradesh",
-  "Uttarakhand",
-  "West Bengal",
-  "Andaman and Nicobar Islands",
-  "Chandigarh",
-  "Dadra and Nagar Haveli and Daman and Diu",
-  "Delhi",
-  "Jammu and Kashmir",
-  "Ladakh",
-  "Lakshadweep",
-  "Puducherry",
-  "Other",
-] as const;
 
 const THEME_COLORS = ["#059669", "#0ea5e9", "#7c3aed", "#d97706", "#dc2626"] as const;
 

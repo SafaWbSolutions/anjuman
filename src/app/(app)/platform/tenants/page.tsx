@@ -18,6 +18,7 @@ import {
   Loader2,
 } from "lucide-react";
 import type { Tenant, TenantStatus } from "@/lib/types";
+import { INDIAN_STATES } from "@/lib/states";
 import {
   createTenantRecord,
   listTenants,
@@ -487,6 +488,7 @@ function NewTenantDrawer({ open, onClose }: { open: boolean; onClose: () => void
   const [village, setVillage] = useState("");
   const [district, setDistrict] = useState("");
   const [state, setState] = useState("Uttar Pradesh");
+  const [customState, setCustomState] = useState("");
   const [code, setCode] = useState("");
   const [sadarPhone, setSadarPhone] = useState("");
   const [plan, setPlan] = useState("trial");
@@ -498,6 +500,11 @@ function NewTenantDrawer({ open, onClose }: { open: boolean; onClose: () => void
       toast("Name, village, district and prefix are required", "error");
       return;
     }
+    const finalState = state === "Other" ? customState.trim() : state;
+    if (!finalState) {
+      toast("State ka naam likho", "error");
+      return;
+    }
     setCreating(true);
     try {
       await createTenantRecord({
@@ -505,7 +512,7 @@ function NewTenantDrawer({ open, onClose }: { open: boolean; onClose: () => void
         name,
         village,
         district,
-        state,
+        state: finalState,
         masjid: "",
         regNo: "",
         phone: sadarPhone,
@@ -552,13 +559,22 @@ function NewTenantDrawer({ open, onClose }: { open: boolean; onClose: () => void
         </Field>
         <Field label="State">
           <Select value={state} onChange={(e) => setState(e.target.value)}>
-            <option>Uttar Pradesh</option>
-            <option>Bihar</option>
-            <option>West Bengal</option>
-            <option>Maharashtra</option>
-            <option>Other</option>
+            {INDIAN_STATES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
           </Select>
         </Field>
+        {state === "Other" ? (
+          <Field label="State name (custom)" hint="Apna state / region likho">
+            <Input
+              value={customState}
+              onChange={(e) => setCustomState(e.target.value)}
+              placeholder="e.g. Bihar"
+            />
+          </Field>
+        ) : null}
         <Field label="Member ID prefix" hint="3–4 letters, unique across the platform.">
           <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="BHR" maxLength={4} className="font-mono uppercase" />
         </Field>

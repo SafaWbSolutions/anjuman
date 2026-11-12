@@ -4,7 +4,7 @@
 > database me kya hai, paisa kaise calculate hota hai, aur bug aaye to **direct kis file me
 > haath daalna hai**. Naya developer pehle ye file padhe, phir code khole.
 >
-> **Last verified:** 12 Nov 2026 · migration head `0041` · member pause/resume + Raziya Manzil data import deployed.
+> **Last verified:** 12 Nov 2026 · migration head `0042` · member pause/resume + Raziya Manzil monthly rebuild deployed.
 
 ---
 
@@ -638,6 +638,7 @@ hai).
 | 0039 | `restore_member.sql` | Sadar can restore an archived member back to active |
 | 0040 | `member_pause_resume.sql` | Member pause/resume/archive/delete with dual approval (maker-checker) |
 | 0041 | `import_raziya_manzil.sql` | One-off import of the old PHP app data for RMHC (37 members, receipts, dues, expenses, gifts) |
+| 0042 | `rebuild_raziya_monthly.sql` | Rebuilds 12 months of dues (Dec 2025–Nov 2026) for every imported member; net due ₹23,000 |
 
 ### Migration rules
 
@@ -915,17 +916,17 @@ Source: `u409071687_raziya_manzil.sql` (old PHP app). Target tenant: code `RMHC`
 
 - **37 members** imported (`notes='old-app:user:<id>'`), fee ₹100/month.
 - **217 verified receipts** (₹25,100) with `OLD-<id>` receipt numbers.
-- **232 invoices** built from old `monthly_dues` + every month that has a payment.
-- **Reconciled outstanding ₹1,600** (16 × ₹100); old `monthly_dues` flags were
-  stale (₹3,500), so allocation follows the payments.
-- **₹100 advance** (one member had two payments in the same month).
+- **0042 rebuilds the full hisab from 3 Dec 2025**: 37 members × 12 months
+  (Dec 2025–Nov 2026) × ₹100 + ₹100 joining = **₹48,100 billed**.
+- **Net outstanding ₹23,000** (gross open ₹23,200 − ₹200 Dec 2026 advance).
+- Old app's ₹1,600 "due" was stale April auto-dues; 0042 replaces it.
 - **3 expenses ₹2,477** + **2 gifts ₹1,500** (verified donations) imported.
 - Fund balance after import: **₹24,123** (25,100 + 1,500 − 2,477).
 - Ledger hash chain verified intact (`verify_ledger` → null).
 - Old passwords are **not** imported (bcrypt not compatible with Supabase Auth);
   members need a fresh login.
-- Idempotent: re-running 0041 does not duplicate members, invoices, receipts,
-  expenses or gifts.
+- Idempotent: re-running 0041/0042 does not duplicate rows; 0042 rebuilds
+  allocations from scratch.
 - Orphan old user #38 had a ₹100 due but no member row → excluded.
 
 ### 15.9 Approvals engine

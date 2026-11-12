@@ -17,9 +17,10 @@ on:
       file:
         description: "Migration file path"
         required: true
-        default: "supabase/migrations/0041_import_raziya_manzil.sql"
+        default: "supabase/migrations/0042_rebuild_raziya_monthly.sql"
   push:
     paths:
+      - "supabase/migrations/0042_rebuild_raziya_monthly.sql"
       - "supabase/migrations/0041_import_raziya_manzil.sql"
       - "supabase/migrations/0040_member_pause_resume.sql"
       - "supabase/migrations/0039_restore_member.sql"
@@ -80,7 +81,7 @@ jobs:
       - name: Apply migration
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0041_import_raziya_manzil.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0042_rebuild_raziya_monthly.sql' }}
         run: |
           set -euo pipefail
           test -f "$FILE"
@@ -90,7 +91,7 @@ jobs:
       - name: Verify migration result
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0041_import_raziya_manzil.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0042_rebuild_raziya_monthly.sql' }}
         run: |
           set -euo pipefail
           case "$FILE" in
@@ -164,7 +165,6 @@ jobs:
             v_tenant  uuid;
             v_members int;
             v_paid    bigint;
-            v_due     bigint;
           begin
             select id into v_tenant
               from public.tenants
@@ -184,15 +184,7 @@ jobs:
               from public.payments
              where tenant_id = v_tenant and receipt_no like 'OLD-%';
 
-            select coalesce(sum(i.amount_paise - i.paid_paise), 0) into v_due
-              from public.invoices i
-              join public.members m on m.id = i.member_id
-             where i.tenant_id = v_tenant
-               and m.notes like 'old-app:user:%'
-               and i.status in ('pending','partial');
-
-            raise notice 'Raziya import: members=%, paid_paise=%, due_paise=%',
-              v_members, v_paid, v_due;
+            raise notice 'Raziya import: members=%, paid_paise=%', v_members, v_paid;
 
             if v_members <> 37 then
               raise exception 'Expected 37 imported members, found %', v_members;
@@ -200,11 +192,77 @@ jobs:
             if v_paid <> 2510000 then
               raise exception 'Expected paid 2510000 paise, found %', v_paid;
             end if;
-            if v_due <> 160000 then
-              raise exception 'Expected due 160000 paise, found %', v_due;
-            end if;
           end $$;
           select 'Raziya Manzil import OK' as result;
+          SQL
+              ;;
+            *0042*)
+              psql "$DB_URL_RUN" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare
+            v_tenant    uuid;
+            v_members   int;
+            v_billed    bigint;
+            v_allocated bigint;
+            v_open      bigint;
+            v_advance   bigint;
+          begin
+            select id into v_tenant
+              from public.tenants
+             where code = 'RMHC' or name ilike '%Raziya Manzil%'
+             order by (code = 'RMHC') desc, created_at asc
+             limit 1;
+
+            if v_tenant is null then
+              raise exception 'Raziya Manzil tenant not found';
+            end if;
+
+            select count(*) into v_members
+              from public.members
+             where tenant_id = v_tenant and notes like 'old-app:user:%';
+
+            select coalesce(sum(i.amount_paise), 0),
+                   coalesce(sum(i.paid_paise), 0)
+              into v_billed, v_allocated
+              from public.invoices i
+              join public.members m on m.id = i.member_id
+             where i.tenant_id = v_tenant
+               and m.notes like 'old-app:user:%'
+               and i.period between '2025-12' and '2026-11';
+
+            select coalesce(sum(i.amount_paise - i.paid_paise), 0)
+              into v_open
+              from public.invoices i
+              join public.members m on m.id = i.member_id
+             where i.tenant_id = v_tenant
+               and m.notes like 'old-app:user:%'
+               and i.status in ('pending','partial');
+
+            select coalesce(sum(unallocated_paise), 0)
+              into v_advance
+              from public.payments
+             where tenant_id = v_tenant and receipt_no like 'OLD-%';
+
+            raise notice 'Raziya rebuild: members=%, billed=%, allocated=%, open=%, advance=%',
+              v_members, v_billed, v_allocated, v_open, v_advance;
+
+            if v_members <> 37 then
+              raise exception 'Expected 37 members, found %', v_members;
+            end if;
+            if v_billed <> 4810000 then
+              raise exception 'Expected billed 4810000 paise, found %', v_billed;
+            end if;
+            if v_allocated <> 2490000 then
+              raise exception 'Expected allocated 2490000 paise, found %', v_allocated;
+            end if;
+            if v_open <> 2320000 then
+              raise exception 'Expected open 2320000 paise, found %', v_open;
+            end if;
+            if v_advance <> 20000 then
+              raise exception 'Expected advance 20000 paise, found %', v_advance;
+            end if;
+          end $$;
+          select 'Raziya monthly rebuild OK (net due 2300000 paise)' as result;
           SQL
               ;;
             *)

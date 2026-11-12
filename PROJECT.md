@@ -941,6 +941,11 @@ Source: `u409071687_raziya_manzil.sql` (old PHP app). Target tenant: code `RMHC`
 - **Collected this month ₹0** = no cash *received* in Nov 2026. The 2 Nov dues
   were prepaid on 3 Feb 2026, so they belong to February's collection.
 - **Gift amount ₹1,500** after 0043; before that the gifts were in General Fund.
+- **Dec 2026 onwards:** the daily maintenance job (02:00 IST, plus the GitHub
+  fallback) calls `generate_monthly_invoices` for the current month. Every
+  active member gets a ₹100 invoice (due on the 10th). Paused/archived members
+  are skipped, and the `invoices_apply_advance` trigger automatically uses any
+  advance already received. Re-runs are idempotent.
 
 ### 15.9 Approvals engine
 

@@ -10,7 +10,9 @@ import {
   IdCard,
   Loader2,
   Pencil,
+  PauseCircle,
   Phone,
+  PlayCircle,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -31,16 +33,21 @@ import {
   generateInvoices,
   generateMemberDues,
   getCurrentTenant,
+  getPendingMemberChange,
   listInvoices,
   listMembers,
   listPayments,
-  removeMember,
   requestFeeChange,
+  requestMemberArchive,
+  requestMemberDelete,
+  requestMemberPause,
+  requestMemberResume,
   requestPaymentEdit,
   requestPaymentReset,
   restoreMember,
   saveMemberDetails,
   uploadAvatar,
+  type PendingMemberChange,
 } from "@/lib/repo";
 import { isDemoMode } from "@/lib/supabase";
 import { formatINR, formatDate, periodLabel, cn } from "@/lib/utils";
@@ -184,6 +191,7 @@ export default function MembersPage() {
   const tenantName = tenant?.name ?? activeTenant.name;
   const village = tenant?.village ?? activeTenant.village;
   const activeCount = members.filter((m) => m.status === "active").length;
+  const pausedCount = members.filter((m) => m.status === "paused").length;
   const archivedCount = members.filter((m) => m.status === "inactive").length;
 
   return (
@@ -191,7 +199,7 @@ export default function MembersPage() {
       <PageHeader
         eyebrow="Community"
         title="Members"
-        description={`${activeCount} active member${activeCount === 1 ? "" : "s"}${archivedCount ? ` · ${archivedCount} archived` : ""} across ${new Set(members.map((m) => m.household).filter(Boolean)).size} households in ${village}.`}
+        description={`${activeCount} active member${activeCount === 1 ? "" : "s"}${pausedCount ? ` · ${pausedCount} paused` : ""}${archivedCount ? ` · ${archivedCount} archived` : ""} across ${new Set(members.map((m) => m.household).filter(Boolean)).size} households in ${village}.`}
         actions={
           <>
             <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
@@ -292,6 +300,7 @@ export default function MembersPage() {
           className="h-9 w-auto py-1.5 text-[12.5px]"
         >
           <option value="active">Active</option>
+          <option value="paused">Paused</option>
           <option value="inactive">Inactive / archived</option>
           <option value="pending">Pending</option>
           <option value="all">All statuses</option>
@@ -432,18 +441,52 @@ export default function MembersPage() {
         onClose={() => setSelected(null)}
         onCreateLogin={(m) => setLoginMember(m)}
         onEdit={(m) => setEditMember(m)}
-        onRemove={async (m) => {
+        onPause={async (m, reason) => {
           try {
-            const result = await removeMember(m.id);
+            await requestMemberPause(m.id, reason);
             toast(
-              result === "ARCHIVED"
-                ? `${m.name} archive ho gaya — Active list se hat gaya. "Inactive / archived" filter me milega; receipts aur ledger safe hain.`
-                : `${m.name} permanently remove ho gaya`
+              `${m.name} ka pause request bhej diya — approve hone tak member active rahega. Approval doosre office bearer (Sadar/Khajanchi) karega.`
             );
             setSelected(null);
             await load();
           } catch (e) {
-            toast(errorText(e, "Member remove nahi hua"), "error");
+            toast(errorText(e, "Pause request nahi gayi"), "error");
+          }
+        }}
+        onResume={async (m, reason) => {
+          try {
+            await requestMemberResume(m.id, reason);
+            toast(
+              `${m.name} ka resume request bhej diya — approve hone par auto due wapas chalu ho jayega.`
+            );
+            setSelected(null);
+            await load();
+          } catch (e) {
+            toast(errorText(e, "Resume request nahi gayi"), "error");
+          }
+        }}
+        onArchive={async (m, reason) => {
+          try {
+            await requestMemberArchive(m.id, reason);
+            toast(
+              `${m.name} ka archive request bhej diya — approve hone par Active list se hat jayega, receipts aur ledger safe rahenge.`
+            );
+            setSelected(null);
+            await load();
+          } catch (e) {
+            toast(errorText(e, "Archive request nahi gayi"), "error");
+          }
+        }}
+        onDelete={async (m, reason) => {
+          try {
+            await requestMemberDelete(m.id, reason);
+            toast(
+              `${m.name} ka permanent delete request bhej diya — doosre office bearer ki approval ke baad hi delete hoga.`
+            );
+            setSelected(null);
+            await load();
+          } catch (e) {
+            toast(errorText(e, "Delete request nahi gayi"), "error");
           }
         }}
         onRequestReset={async (m, reason) => {
@@ -603,7 +646,10 @@ function MemberDrawer({
   onClose,
   onCreateLogin,
   onEdit,
-  onRemove,
+  onPause,
+  onResume,
+  onArchive,
+  onDelete,
   onRequestReset,
   onRestore,
   onEditPayment,
@@ -616,19 +662,44 @@ function MemberDrawer({
   onClose: () => void;
   onCreateLogin: (member: Member) => void;
   onEdit: (member: Member) => void;
-  onRemove: (member: Member) => Promise<void>;
+  onPause: (member: Member, reason: string) => Promise<void>;
+  onResume: (member: Member, reason: string) => Promise<void>;
+  onArchive: (member: Member, reason: string) => Promise<void>;
+  onDelete: (member: Member, reason: string) => Promise<void>;
   onRequestReset: (member: Member, reason: string) => Promise<void>;
   onRestore: (member: Member) => Promise<void>;
   onEditPayment: (payment: Payment) => void;
 }) {
   const { user } = useAuth();
   const [receipt, setReceipt] = useState<ReceiptInfo | null>(null);
-  const [confirmRemove, setConfirmRemove] = useState(false);
-  const [removing, setRemoving] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetReason, setResetReason] = useState("");
   const [resetting, setResetting] = useState(false);
+  const [membershipOpen, setMembershipOpen] = useState<
+    false | "pause" | "resume" | "remove"
+  >(false);
+  const [changeReason, setChangeReason] = useState("");
+  const [changeBusy, setChangeBusy] = useState(false);
+  const [removeMode, setRemoveMode] = useState<"archive" | "delete">("archive");
+  const [pendingChange, setPendingChange] = useState<PendingMemberChange | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setPendingChange(null);
+    if (!member) return;
+    getPendingMemberChange(member.id)
+      .then((value) => {
+        if (alive) setPendingChange(value);
+      })
+      .catch(() => {
+        // A pending badge is a nicety; the RPC still blocks duplicates.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [member?.id]);
+
   if (!member) return null;
 
   const dues = invoices.filter(
@@ -641,10 +712,14 @@ function MemberDrawer({
     .filter((i) => i.memberId === member.id)
     .reduce((s, i) => s + i.paidPaise, 0);
   const dueTotal = dues.reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0);
-  const canRemove = user?.role === "sadar" || user?.role === "super_admin";
+  const isActive = member.status === "active";
+  const isPaused = member.status === "paused";
   const isArchived = member.status === "inactive";
-  // Mirrors the DB rule: receipts / paid invoices keep the row (archive).
-  const hasFinance = pays.length > 0 || paidTotal > 0;
+  const canManageMembership =
+    user?.role === "sadar" ||
+    user?.role === "khajanchi" ||
+    user?.role === "super_admin";
+  const canRestore = user?.role === "sadar" || user?.role === "super_admin";
   const canEditPayment =
     user?.role === "sadar" ||
     user?.role === "secretary" ||
@@ -655,6 +730,19 @@ function MemberDrawer({
       p.memberId === member.id &&
       (p.status === "verified" || p.status === "pending")
   ).length;
+
+  // Permanent delete is only possible when the member has no financial
+  // rows at all (the DB re-checks payments, donations and invoices).
+  const hasAnyInvoice = invoices.some((i) => i.memberId === member.id);
+  const canDelete = pays.length === 0 && !hasAnyInvoice && paidTotal === 0;
+  const approverLabel =
+    user?.role === "khajanchi" ? "Sadar" : "Khajanchi";
+  const pendingLabel: Record<string, string> = {
+    member_pause: "Pause approval pending",
+    member_resume: "Resume approval pending",
+    member_archive: "Archive approval pending",
+    member_delete: "Delete approval pending",
+  };
 
   return (
     <Drawer
@@ -670,7 +758,7 @@ function MemberDrawer({
             <span className="font-medium text-ink-700">{tenantName}</span>
           </p>
           <div className="flex flex-wrap gap-2">
-            {!isArchived &&
+            {isActive &&
               (user?.role === "sadar" ||
                 user?.role === "secretary" ||
                 user?.role === "super_admin") && (
@@ -689,36 +777,60 @@ function MemberDrawer({
                 <RotateCcw className="h-3.5 w-3.5" /> Reset payments
               </Button>
             )}
-            {canRemove && !isArchived && (
+            {isActive && canManageMembership && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="text-amber-700"
+                disabled={!!pendingChange}
+                onClick={() => {
+                  setMembershipOpen((v) => (v === "pause" ? false : "pause"));
+                  setChangeReason("");
+                }}
+              >
+                <PauseCircle className="h-3.5 w-3.5" /> Pause membership
+              </Button>
+            )}
+            {isPaused && canManageMembership && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="text-emerald-700"
+                disabled={!!pendingChange}
+                onClick={() => {
+                  setMembershipOpen((v) => (v === "resume" ? false : "resume"));
+                  setChangeReason("");
+                }}
+              >
+                <PlayCircle className="h-3.5 w-3.5" /> Resume membership
+              </Button>
+            )}
+            {!isArchived && canManageMembership && (
               <Button
                 variant="secondary"
                 size="sm"
                 className="text-red-600"
-                loading={removing}
-                onClick={async () => {
-                  if (!confirmRemove) {
-                    setConfirmRemove(true);
-                    return;
-                  }
-                  setRemoving(true);
-                  try {
-                    await onRemove(member);
-                  } finally {
-                    setRemoving(false);
-                  }
+                disabled={!!pendingChange}
+                onClick={() => {
+                  setMembershipOpen((v) => (v === "remove" ? false : "remove"));
+                  setChangeReason("");
+                  setRemoveMode("archive");
                 }}
               >
-                <Trash2 className="h-3.5 w-3.5" />
-                {confirmRemove
-                  ? hasFinance
-                    ? "Confirm archive"
-                    : "Confirm remove"
-                  : hasFinance
-                    ? "Archive member"
-                    : "Remove member"}
+                <Trash2 className="h-3.5 w-3.5" /> Remove member
               </Button>
             )}
-            {isArchived && canRemove && (
+            {pendingChange && (
+              <span className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11.5px] font-medium text-amber-800">
+                {pendingLabel[pendingChange.type] ?? "Membership approval pending"}
+              </span>
+            )}
+            {isPaused && (
+              <span className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11.5px] text-amber-800">
+                Paused — auto due band hai. Resume approve hone par billing wapas chalu hogi.
+              </span>
+            )}
+            {isArchived && canRestore && (
               <Button
                 variant="secondary"
                 size="sm"
@@ -744,7 +856,7 @@ function MemberDrawer({
             <Button variant="secondary" size="sm" onClick={() => onEdit(member)}>
               <Pencil className="h-3.5 w-3.5" /> Edit
             </Button>
-            {!isArchived && (
+            {isActive && (
               <Button variant="secondary" size="sm" onClick={() => onCreateLogin(member)}>
                 <UserPlus className="h-3.5 w-3.5" /> Create login
               </Button>
@@ -758,7 +870,7 @@ function MemberDrawer({
             >
               <IdCard className="h-3.5 w-3.5" /> ID card
             </Button>
-            {!isArchived && (
+            {isActive && (
               <Button size="sm" onClick={() => toast("Payment entry opened")}>
                 <Wallet className="h-3.5 w-3.5" /> Collect
               </Button>
@@ -800,22 +912,118 @@ function MemberDrawer({
               </div>
             </div>
           )}
-          {confirmRemove && (
-            <p className="w-full rounded-lg bg-red-50 px-3 py-2 text-[11.5px] text-red-700">
-              {hasFinance ? (
-                <>
-                  Is member ka financial history hai, isliye permanent delete nahi hoga.
-                  Remove karne par ye <b>archive</b> hoga: Active list se hat jayega,
-                  login band ho jayegi, aur receipt/ledger safe rahega. Wapas dekhna ho to
-                  status filter me <b>Inactive / archived</b> chunein.
-                </>
-              ) : (
-                <>
-                  Is member ka koi receipt ya paid invoice nahi hai, isliye ye{" "}
-                  <b>permanently delete</b> ho jayega.
-                </>
+          {membershipOpen && (
+            <div className="w-full rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-[12px] font-semibold text-amber-900">
+                {membershipOpen === "pause"
+                  ? "Pause membership request"
+                  : membershipOpen === "resume"
+                    ? "Resume membership request"
+                    : "Remove member request"}
+              </p>
+              <p className="mt-0.5 text-[11.5px] leading-relaxed text-amber-800">
+                {membershipOpen === "pause" ? (
+                  <>
+                    Pause ke dauran koi auto due nahi banega. Receipts aur poori
+                    payment history safe rahegi. Request <b>{approverLabel}</b> approve
+                    karega — khud ki request khud approve nahi hoti.
+                  </>
+                ) : membershipOpen === "resume" ? (
+                  <>
+                    Resume approve hone par is mahine se auto due wapas chalu hoga.
+                    Pause ke mahino ke unpaid invoice <b>waive</b> honge (history delete
+                    nahi hoti). Request <b>{approverLabel}</b> approve karega.
+                  </>
+                ) : (
+                  <>
+                    History kabhi delete nahi hoti. Default option sirf{" "}
+                    <b>archive</b> karta hai; permanent delete tabhi possible hai jab
+                    member ka koi payment, donation ya invoice na ho. Request{" "}
+                    <b>{approverLabel}</b> approve karega.
+                  </>
+                )}
+              </p>
+
+              {membershipOpen === "remove" && (
+                <div className="mt-2 space-y-1.5">
+                  <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-amber-200 bg-white/70 px-2.5 py-2 text-[11.5px] text-ink-700">
+                    <input
+                      type="radio"
+                      name={`remove-mode-${member.id}`}
+                      checked={removeMode === "archive"}
+                      onChange={() => setRemoveMode("archive")}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      <b>Archive (recommended)</b> — Active list se hat jayega, login
+                      band, receipt/ledger aur history safe. Baad me restore ho sakta hai.
+                    </span>
+                  </label>
+                  <label
+                    className={cn(
+                      "flex items-start gap-2 rounded-lg border px-2.5 py-2 text-[11.5px]",
+                      canDelete
+                        ? "cursor-pointer border-red-200 bg-red-50 text-red-700"
+                        : "cursor-not-allowed border-ink-200 bg-ink-100 text-ink-400"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name={`remove-mode-${member.id}`}
+                      checked={removeMode === "delete"}
+                      onChange={() => setRemoveMode("delete")}
+                      disabled={!canDelete}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      <b>Permanent delete</b> —{" "}
+                      {canDelete
+                        ? "sirf member row delete hogi; koi financial record nahi hai. Doosre office bearer ki approval bhi zaroori hai."
+                        : "is member ka financial record hai, isliye permanent delete nahi ho sakta."}
+                    </span>
+                  </label>
+                </div>
               )}
-            </p>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Input
+                  value={changeReason}
+                  onChange={(e) => setChangeReason(e.target.value)}
+                  placeholder="Wajah likhein (zaroori)"
+                  className="min-w-[220px] flex-1"
+                />
+                <Button
+                  size="sm"
+                  loading={changeBusy}
+                  disabled={
+                    !changeReason.trim() ||
+                    (membershipOpen === "remove" &&
+                      removeMode === "delete" &&
+                      !canDelete)
+                  }
+                  onClick={async () => {
+                    setChangeBusy(true);
+                    try {
+                      if (membershipOpen === "pause") {
+                        await onPause(member, changeReason);
+                      } else if (membershipOpen === "resume") {
+                        await onResume(member, changeReason);
+                      } else if (removeMode === "archive") {
+                        await onArchive(member, changeReason);
+                      } else {
+                        await onDelete(member, changeReason);
+                      }
+                      setMembershipOpen(false);
+                      setChangeReason("");
+                    } finally {
+                      setChangeBusy(false);
+                    }
+                  }}
+                >
+                  Send to {approverLabel}
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       }

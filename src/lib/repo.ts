@@ -169,6 +169,9 @@ function toMember(r: Row): Member {
     status: r.status,
     feePaise: num(r.fee_paise),
     joinedOn: r.joined_on,
+    pausedAt: r.paused_at ?? undefined,
+    pausedBy: r.paused_by ?? undefined,
+    resumedAt: r.resumed_at ?? undefined,
     bloodGroup: r.blood_group ?? undefined,
     photoUrl: r.photo_url ?? undefined,
     concession: r.concession ?? undefined,
@@ -1032,6 +1035,9 @@ export async function listAllMembers(): Promise<(Member & { tenantName: string }
     status: r.status,
     feePaise: num(r.fee_paise),
     joinedOn: r.joined_on,
+    pausedAt: r.paused_at ?? undefined,
+    pausedBy: r.paused_by ?? undefined,
+    resumedAt: r.resumed_at ?? undefined,
     bloodGroup: r.blood_group ?? undefined,
     photoUrl: r.photo_url ?? undefined,
     concession: r.concession ?? undefined,
@@ -2485,6 +2491,92 @@ export async function restoreMember(memberId: string): Promise<void> {
     p_member: memberId,
   });
   if (error) throw error;
+}
+
+// ── Membership pause / resume / archive / delete (maker-checker) ──
+
+export type MemberChangeType =
+  | "member_pause"
+  | "member_resume"
+  | "member_archive"
+  | "member_delete";
+
+export interface PendingMemberChange {
+  id: string;
+  type: MemberChangeType;
+  requestedAt: string;
+}
+
+const MEMBER_CHANGE_TYPES: MemberChangeType[] = [
+  "member_pause",
+  "member_resume",
+  "member_archive",
+  "member_delete",
+];
+
+/** The membership request (if any) still waiting for the second person. */
+export async function getPendingMemberChange(
+  memberId: string
+): Promise<PendingMemberChange | null> {
+  if (isDemoMode) return null;
+
+  const { data, error } = await client()
+    .from("approvals")
+    .select("id, entity_type, created_at")
+    .eq("entity_id", memberId)
+    .eq("status", "pending")
+    .in("entity_type", MEMBER_CHANGE_TYPES)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) throw error;
+  const r = (data ?? [])[0];
+  if (!r) return null;
+
+  return {
+    id: String(r.id),
+    type: r.entity_type as MemberChangeType,
+    requestedAt: String(r.created_at),
+  };
+}
+
+async function requestMemberChange(
+  rpc: "request_member_pause" | "request_member_resume" | "request_member_archive" | "request_member_delete",
+  memberId: string,
+  reason: string
+): Promise<string> {
+  if (isDemoMode) return `demo-${rpc}-${Date.now()}`;
+
+  const { data, error } = await client().rpc(rpc, {
+    p_member: memberId,
+    p_reason: reason.trim(),
+  });
+  if (error) throw error;
+  return String(data);
+}
+
+/** Sadar ↔ Khajanchi approval: pause the membership, stop auto dues. */
+export async function requestMemberPause(memberId: string, reason: string): Promise<string> {
+  return requestMemberChange("request_member_pause", memberId, reason);
+}
+
+/** Sadar ↔ Khajanchi approval: resume the membership and monthly dues. */
+export async function requestMemberResume(memberId: string, reason: string): Promise<string> {
+  return requestMemberChange("request_member_resume", memberId, reason);
+}
+
+/** Sadar ↔ Khajanchi approval: archive the member, keep all history. */
+export async function requestMemberArchive(memberId: string, reason: string): Promise<string> {
+  return requestMemberChange("request_member_archive", memberId, reason);
+}
+
+/**
+ * Sadar ↔ Khajanchi approval: permanent delete. The DB refuses when the
+ * member has any payment, donation or invoice — archive is the only path
+ * once money history exists.
+ */
+export async function requestMemberDelete(memberId: string, reason: string): Promise<string> {
+  return requestMemberChange("request_member_delete", memberId, reason);
 }
 
 // ═══════════════════════════════════════════════════════════════

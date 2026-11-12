@@ -4,7 +4,7 @@
 > database me kya hai, paisa kaise calculate hota hai, aur bug aaye to **direct kis file me
 > haath daalna hai**. Naya developer pehle ye file padhe, phir code khole.
 >
-> **Last verified:** 12 Nov 2026 · migration head `0039` · dashboard error fix deployed.
+> **Last verified:** 12 Nov 2026 · migration head `0040` · member pause/resume/archive/delete with dual approval deployed.
 
 ---
 
@@ -512,6 +512,14 @@ aate hain.
 | `update_member_details()` | guarded member edit |
 | `remove_member()` | hard delete only if no financial history, else archive |
 | `restore_member()` | archived member ko wapas active (Sadar / platform admin) |
+| `request_member_pause()` | pause request → approval (Sadar/Khajanchi cross) |
+| `request_member_resume()` | resume request → approval |
+| `request_member_archive()` | archive request → approval |
+| `request_member_delete()` | delete request → approval (fails if finance history) |
+| `apply_member_pause()` | approve pause → status=paused |
+| `apply_member_resume()` | approve resume → status=active |
+| `apply_member_archive()` | approve archive → status=inactive |
+| `apply_member_delete()` | approve delete → row delete |
 | `generate_member_dues(member, from, to)` | backdated range, never before `joined_on` |
 | `generate_dues_range(...)` | member onboarding date-range total |
 | `generate_monthly_invoices(...)` | idempotent monthly run |
@@ -628,6 +636,7 @@ hai).
 | 0037 | `payment_settings_rpc.sql` | scoped `save_payment_settings` |
 | 0038 | `fix_dashboard_settled_at.sql` | `dashboard_snapshot` now uses `verified_at`; fixes `column "settled_at" does not exist` |
 | 0039 | `restore_member.sql` | Sadar can restore an archived member back to active |
+| 0040 | `member_pause_resume.sql` | Member pause/resume/archive/delete with dual approval (maker-checker) |
 
 ### Migration rules
 
@@ -846,6 +855,36 @@ har table par role-level nahi. Iska matlab:
 - Archived member ke liye Collect / Create login / Reset payments buttons chhupe
   rehte hain, kyunki inactive member par naya paisa nahi lena chahiye.
 - Payment reset alag process hai aur **Khajanchi approval** mandatory.
+
+### 15.7b Member pause / resume / archive / delete (maker-checker)
+
+**Problem:** Sadar akela member remove kar sakta tha — misuse ka risk. Member resign kare to uska history delete ho jaata tha (nuksan).
+
+**Solution (0040):** Ab **har membership change ke liye dual approval** zaroori hai:
+
+| Action | Status change | Dues | Approver (cross) |
+|--------|---------------|------|------------------|
+| **Pause** | active → `paused` | Auto due **band** | Sadar/Secretary request → **Khajanchi** approve  <br/>Khajanchi request → **Sadar/Secretary** approve |
+| **Resume** | paused → `active` | Auto due **wapas chalu** | Same cross-approval |
+| **Archive** | active/paused → `inactive` | Due band, history safe, login band | Same cross-approval |
+| **Delete** | active/paused → row delete | Sirf agar **koi financial history na ho** | Same cross-approval |
+
+**Key security rules:**
+- **Khud ki request khud approve nahi hoti** (maker ≠ checker)
+- Sadar/Secretary ↔ Khajanchi **cross-approval** mandatory
+- Super admin bypass kar sakta hai
+- `paused` member auto invoice generation se excluded (0004, 0024, 0035 already filter `m.status = 'active'`)
+- `paused` member outstanding/dues reports se excluded (0030, 0038 already filter active)
+- **History kabhi delete nahi hoti** — archive/delete sirf status change ya row removal hai; receipts, payments, ledger, audit trail intact rehte hain
+
+**UI:** Member drawer me `Pause membership`, `Resume membership`, `Remove member` (archive/delete radio) buttons hain. Har action ke liye reason mandatory hai. Pending approval badge dikhta hai jab request bheji gayi ho.
+
+**RPCs:**
+- `request_member_pause(member, reason)` → approval create
+- `request_member_resume(member, reason)` → approval create
+- `request_member_archive(member, reason)` → approval create
+- `request_member_delete(member, reason)` → approval create (fails fast agar finance history hai)
+- `decide_approval(id, approve, note)` → calls `apply_member_pause/resume/archive/delete`
 
 ### 15.8 Payment correction & reset
 
@@ -1230,6 +1269,7 @@ npm.cmd run deploy     # wrangler pages deploy out --project-name=anjuman --bran
 | Advance apply nahi ho raha | `invoices_apply_advance()`, `apply_member_advance()` | dual approval complete? |
 | Member delete nahi ho raha | `remove_member()` (0027) | financial history? archive hoga; default Active filter me row hat jayegi |
 | Payment reset nahi ho raha | `request_payment_reset()` / `apply_member_payment_reset()` | Khajanchi approval chahiye |
+| Member pause/resume/archive/delete nahi ho raha | `0040_member_pause_resume.sql`, `decide_approval()` | cross-approval chahiye (Sadar↔Khajanchi); self-approval blocked; `member_status` me `paused` enum hai? |
 | Member code duplicate/galat check digit | `assign_member_code()`, `utils.checkDigit` | serial/tenant code |
 | Monthly dues nahi ban rahe | `generate_monthly_invoices()`, `AppShell` self-heal, nightly | `fee_start_period`, idempotency |
 | Backdated dues `joined_on` se pehle ban rahe | `generate_member_dues()` (0024) | from date clamp |
@@ -1442,6 +1482,8 @@ queue_notice_broadcast            queue_payment_receipt
 queue_reminders                   reject_donation
 reject_expense                    reject_payment
 remove_member                     request_fee_change
+request_member_archive            request_member_delete
+request_member_pause              request_member_resume
 restore_member
 request_payment_edit              request_payment_reset
 request_waiver                    requeue_notifications

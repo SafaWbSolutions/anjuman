@@ -168,6 +168,7 @@ export function StatusPill({ status }: { status: string }) {
     verified: { tone: "green", label: "Verified" },
     approved: { tone: "green", label: "Approved" },
     active: { tone: "green", label: "Active" },
+    paused: { tone: "amber", label: "Paused" },
     resolved: { tone: "green", label: "Resolved" },
     connected: { tone: "green", label: "Connected" },
     pending: { tone: "amber", label: "Pending" },

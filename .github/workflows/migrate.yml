@@ -17,10 +17,10 @@ on:
       file:
         description: "Migration file path"
         required: true
-        default: "supabase/migrations/0040_member_pause_enum.sql"
+        default: "supabase/migrations/0040_member_pause_resume.sql"
   push:
     paths:
-      - "supabase/migrations/0040_member_pause_enum.sql"
+      - "supabase/migrations/0040_member_pause_resume.sql"
       - "supabase/migrations/0039_restore_member.sql"
       - "supabase/migrations/0038_fix_dashboard_settled_at.sql"
       - ".github/workflows/migrate.yml"
@@ -79,7 +79,7 @@ jobs:
       - name: Apply migration
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0040_member_pause_enum.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0040_member_pause_resume.sql' }}
         run: |
           set -euo pipefail
           test -f "$FILE"
@@ -89,7 +89,7 @@ jobs:
       - name: Verify migration result
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0040_member_pause_enum.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0040_member_pause_resume.sql' }}
         run: |
           set -euo pipefail
           case "$FILE" in

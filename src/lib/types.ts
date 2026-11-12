@@ -100,7 +100,7 @@ export interface RegistrationRequest {
 }
 
 export type MemberType = "member" | "donor" | "imam" | "muazzin" | "staff";
-export type MemberStatus = "active" | "inactive" | "pending";
+export type MemberStatus = "active" | "inactive" | "pending" | "paused";
 
 export interface Member {
   id: string;
@@ -116,6 +116,9 @@ export interface Member {
   status: MemberStatus;
   feePaise: number;
   joinedOn: string;
+  pausedAt?: string;
+  pausedBy?: string;
+  resumedAt?: string;
   bloodGroup?: string;
   photoUrl?: string;
   concession?: string;
@@ -229,7 +232,11 @@ export interface Approval {
     | "member"
     | "fee_change"
     | "payment_reset"
-    | "payment_edit";
+    | "payment_edit"
+    | "member_pause"
+    | "member_resume"
+    | "member_archive"
+    | "member_delete";
   entityId: string;
   title: string;
   subtitle: string;

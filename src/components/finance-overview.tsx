@@ -178,7 +178,7 @@ export function FinanceOverview({
   const qarzFunds = funds.filter((f) => /qarz|loan|udhaar/i.test(`${f.code} ${f.name}`));
   const qarz = qarzFunds.reduce((s, f) => s + f.balancePaise, 0);
   const balance = funds.reduce((s, f) => s + f.balancePaise, 0);
-  const outstanding = invoices
+  const outstandingGross = invoices
     .filter(
       (i) =>
         (i.status === "pending" || i.status === "partial") &&
@@ -186,6 +186,38 @@ export function FinanceOverview({
         memberMap.get(i.memberId)?.status === "active"
     )
     .reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0);
+
+  // Advance that exceeds a member's open dues is a credit, not a
+  // receivable. Net it out so the card matches the member-wise view.
+  const advanceCredit = (() => {
+    const dueByMember = new Map<string, number>();
+    for (const i of invoices) {
+      if (
+        (i.status === "pending" || i.status === "partial") &&
+        periodInRange(i.period) &&
+        memberMap.get(i.memberId)?.status === "active"
+      ) {
+        dueByMember.set(
+          i.memberId,
+          (dueByMember.get(i.memberId) ?? 0) + (i.amountPaise - i.paidPaise)
+        );
+      }
+    }
+    const advByMember = new Map<string, number>();
+    for (const p of rangePayments) {
+      const adv = p.unallocatedPaise ?? 0;
+      if (adv > 0) {
+        advByMember.set(p.memberId, (advByMember.get(p.memberId) ?? 0) + adv);
+      }
+    }
+    let credit = 0;
+    for (const [memberId, adv] of advByMember) {
+      credit += Math.max(0, adv - (dueByMember.get(memberId) ?? 0));
+    }
+    return credit;
+  })();
+
+  const outstanding = Math.max(0, outstandingGross - advanceCredit);
 
   const label = from || to ? `${from || "start"} → ${to || "today"}` : "All time";
 
@@ -347,7 +379,7 @@ export function FinanceOverview({
     {
       key: "outstanding",
       label: "Total outstanding dues",
-      sub: `${label}`,
+      sub: `${label}${advanceCredit > 0 ? ` · ${formatINR(advanceCredit)} advance adjusted` : ""}`,
       value: outstanding,
       icon: Banknote,
       tone: "amber",

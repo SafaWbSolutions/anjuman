@@ -152,6 +152,7 @@ export interface Payment {
   verifiedBy?: string;
   createdAt: string;
   settledAt?: string;
+  unallocatedPaise?: number;
   note?: string;
   requiresDualApproval?: boolean;
   firstApprovedBy?: string;

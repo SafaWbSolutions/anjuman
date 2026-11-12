@@ -252,6 +252,53 @@ function OfficeDashboard() {
   const activeMembers = members.filter((m) => m.status === "active").length;
   const households = new Set(members.map((m) => m.household).filter(Boolean)).size;
 
+  const membersWithDues = useMemo(() => {
+    const ids = new Set<string>();
+    for (const i of invoices) {
+      if (
+        (i.status === "pending" || i.status === "partial") &&
+        memberMap.get(i.memberId)?.status === "active"
+      ) {
+        ids.add(i.memberId);
+      }
+    }
+    return ids.size;
+  }, [invoices, memberMap]);
+
+  const advanceCredit = useMemo(() => {
+    const dueByMember = new Map<string, number>();
+    for (const i of invoices) {
+      if (
+        (i.status === "pending" || i.status === "partial") &&
+        memberMap.get(i.memberId)?.status === "active"
+      ) {
+        dueByMember.set(
+          i.memberId,
+          (dueByMember.get(i.memberId) ?? 0) + (i.amountPaise - i.paidPaise)
+        );
+      }
+    }
+    const advanceByMember = new Map<string, number>();
+    for (const p of payments) {
+      const adv = p.unallocatedPaise ?? 0;
+      if (p.status === "verified" && adv > 0) {
+        advanceByMember.set(p.memberId, (advanceByMember.get(p.memberId) ?? 0) + adv);
+      }
+    }
+    let credit = 0;
+    for (const [memberId, adv] of advanceByMember) {
+      credit += Math.max(0, adv - (dueByMember.get(memberId) ?? 0));
+    }
+    return credit;
+  }, [invoices, memberMap, payments]);
+
+  const outstandingNet = Math.max(0, (snapshot?.outstandingPaise ?? 0) - advanceCredit);
+  const receiptsThisMonth = payments.filter(
+    (p) =>
+      p.status === "verified" &&
+      (p.settledAt ?? p.createdAt).startsWith(CURRENT_MONTH)
+  ).length;
+
   const exceptions = useMemo(() => {
     const list: {
       icon: typeof AlertTriangle;
@@ -378,15 +425,17 @@ function OfficeDashboard() {
             <StatCard
               label="Collected this month"
               value={formatINR(snapshot?.collectedPaise ?? 0)}
-              sub={`${payments.filter((p) => p.status === "verified").length} verified receipts`}
+              sub={`${receiptsThisMonth} receipt${receiptsThisMonth === 1 ? "" : "s"} this month`}
               icon={HandCoins}
               tone="green"
-              trend={`${collectionRate}% of billed amount`}
+              trend={`${collectionRate}% of all billed`}
             />
             <StatCard
               label="Outstanding dues"
-              value={formatINR(snapshot?.outstandingPaise ?? 0)}
-              sub={`${topDefaulters.length}+ members pending`}
+              value={formatINR(outstandingNet)}
+              sub={`${membersWithDues} members pending${
+                advanceCredit > 0 ? ` · ${formatINR(advanceCredit)} advance` : ""
+              }`}
               icon={Clock}
               tone="amber"
             />

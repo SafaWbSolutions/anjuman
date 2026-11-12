@@ -4,7 +4,7 @@
 > database me kya hai, paisa kaise calculate hota hai, aur bug aaye to **direct kis file me
 > haath daalna hai**. Naya developer pehle ye file padhe, phir code khole.
 >
-> **Last verified:** 12 Nov 2026 · migration head `0042` · member pause/resume + Raziya Manzil monthly rebuild deployed.
+> **Last verified:** 12 Nov 2026 · migration head `0043` · Raziya monthly hisab + gift reclassification deployed.
 
 ---
 
@@ -639,6 +639,7 @@ hai).
 | 0040 | `member_pause_resume.sql` | Member pause/resume/archive/delete with dual approval (maker-checker) |
 | 0041 | `import_raziya_manzil.sql` | One-off import of the old PHP app data for RMHC (37 members, receipts, dues, expenses, gifts) |
 | 0042 | `rebuild_raziya_monthly.sql` | Rebuilds 12 months of dues (Dec 2025–Nov 2026) for every imported member; net due ₹23,000 |
+| 0043 | `reclassify_raziya_gifts.sql` | Moves the 2 imported gifts (₹1,500) from General Fund to GIFT fund |
 
 ### Migration rules
 
@@ -921,13 +922,25 @@ Source: `u409071687_raziya_manzil.sql` (old PHP app). Target tenant: code `RMHC`
 - **Net outstanding ₹23,000** (gross open ₹23,200 − ₹200 Dec 2026 advance).
 - Old app's ₹1,600 "due" was stale April auto-dues; 0042 replaces it.
 - **3 expenses ₹2,477** + **2 gifts ₹1,500** (verified donations) imported.
-- Fund balance after import: **₹24,123** (25,100 + 1,500 − 2,477).
+  0043 moves the gifts to the dedicated `GIFT` fund, so the "Gift amount"
+  card shows ₹1,500 (earlier it showed ₹0 while "All donations" showed ₹1,500).
+- Fund balance after import: **₹24,123** (25,100 + 1,500 − 2,477) —
+  General Fund ₹22,623 + Gift Fund ₹1,500.
 - Ledger hash chain verified intact (`verify_ledger` → null).
 - Old passwords are **not** imported (bcrypt not compatible with Supabase Auth);
   members need a fresh login.
 - Idempotent: re-running 0041/0042 does not duplicate rows; 0042 rebuilds
   allocations from scratch.
 - Orphan old user #38 had a ₹100 due but no member row → excluded.
+
+**Dashboard card meanings (important):**
+- **Total collection ₹25,100** = 217 all-time verified receipts.
+- **Total outstanding ₹23,200** = invoice-based dues (Dec 2025–Nov 2026).
+  Two members prepaid Dec 2026 (₹200), so the UI nets the advance credit and
+  shows **₹23,000** — the two numbers differ by that ₹200 credit.
+- **Collected this month ₹0** = no cash *received* in Nov 2026. The 2 Nov dues
+  were prepaid on 3 Feb 2026, so they belong to February's collection.
+- **Gift amount ₹1,500** after 0043; before that the gifts were in General Fund.
 
 ### 15.9 Approvals engine
 

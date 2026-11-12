@@ -205,6 +205,7 @@ function toPayment(r: Row): Payment {
     verifiedBy: r.verified_by ?? undefined,
     createdAt: r.created_at,
     settledAt: r.verified_at ?? undefined,
+    unallocatedPaise: num(r.unallocated_paise),
     note: r.note ?? undefined,
     requiresDualApproval: Boolean(r.requires_dual_approval),
     firstApprovedBy: r.first_approved_by ?? undefined,

@@ -97,7 +97,7 @@ Demo data me active tenant **Bharauli** hai. Live me ek test tenant
 | PDF | `jspdf` | table PDF + ID card PDF |
 | Image capture | `html-to-image` | ID card / receipt PNG |
 | QR | `qrcode` | member code verification QR |
-| Backend | Supabase (Postgres + Auth + Storage + Edge Functions) | single DB, `tenant_id` + RLS |
+| Backend | Supabase (Postgres + Auth + Edge Functions) + Cloudflare R2 | single DB, `tenant_id` + RLS |
 | Hosting | Cloudflare Pages | `out/` folder upload |
 | CI/CD | GitHub Actions | `deploy.yml`, `backup.yml`, `keepalive.yml`, `maintenance.yml` |
 
@@ -478,9 +478,23 @@ aate hain.
 
 | Bucket | Visibility | Contents |
 | --- | --- | --- |
-| `avatars` | public | profile photos + `qr/<tenant-id>/…` payment QR images |
-| `registration-docs` | private | Sadar/Khajanchi KYC + anjuman proof; super admin signed URL se read karta hai |
+| **Cloudflare R2 `anjuman-assets`** | private (served via Worker) | member photos, tenant logo/masjid photo, UPI QR |
+| `registration-docs` (Supabase) | private | Sadar/Khajanchi KYC + anjuman proof; super admin signed URL se read karta hai |
 | bill/expense attachments | private (per migration) | expense bills |
+
+**R2 upload flow (zero secret keys in browser):**
+
+- Browser → `POST https://r2-upload-gate.starservices0026.workers.dev/upload`
+  with the Supabase JWT + `FormData(file, key)`.
+- Worker validates the JWT, checks office role for `tenants/<id>/…`, writes to R2.
+- Public read: `GET /files/<key>`.
+- KYC documents never go to R2; they stay in the private Supabase bucket.
+- `NEXT_PUBLIC_R2_UPLOAD_URL` build-time variable points at the Worker.
+
+**10 GB hard stop:** `r2-quota-checker` runs daily at 02:00 UTC, sums every
+object in the bucket (R2 binding `list`, no Cloudflare API token), warns at 95%
+and sets KV `uploads_disabled=true` at 10 GB. The upload Worker returns HTTP 403
+`QUOTA_EXCEEDED` while the flag is set. See `workers/README.md`.
 
 ---
 
@@ -1269,6 +1283,7 @@ npm.cmd run deploy     # wrangler pages deploy out --project-name=anjuman --bran
 | `NEXT_PUBLIC_SUPABASE_URL` | `.env.local` + Cloudflare build env | Supabase URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `.env.local` + Cloudflare build env | public anon key |
 | `NEXT_PUBLIC_APP_URL` | `.env.local` | QR/verify links (default `https://anjuman.pages.dev`) |
+| `NEXT_PUBLIC_R2_UPLOAD_URL` | `.env.local` + Cloudflare Pages env | R2 upload Worker URL |
 | `NEXT_PUBLIC_DEMO_MODE` | `.env.local` | `true` = mock data; production me `false`/absent |
 | `SUPABASE_DB_URL` | GitHub secret | backup + `migrate.yml` workflows |
 | `BACKUP_PASSPHRASE` | GitHub secret | backup encryption |
@@ -1327,7 +1342,7 @@ npm.cmd run deploy     # wrangler pages deploy out --project-name=anjuman --bran
 | Email OTP nahi aa raha | Supabase SMTP settings, `auth.tsx` | Hostinger SMTP 465, sender, template `{{ .Token }}`, 600s |
 | OTP verify fail | `auth.tsx verifyEmailOtp` | code expiry, same email, session |
 | TOTP bar-bar maang raha | `MFA_ROLES`, `checkMfa` | factor verified? aal2? |
-| Payment QR upload fail | `uploadPaymentQr()`, storage `avatars/qr/...`, `0036` policies | tenant id, file type, policy |
+| Payment QR upload fail | `uploadPaymentQr()` → R2 Worker, `r2-upload-gate` | Supabase session valid? tenant id path? R2 quota flag? |
 | QR save nahi ho raha | `save_payment_settings()` (0037), `settings/payments` | RPC grant, role |
 | Bank details save nahi | `0036` columns, `savePaymentSettings` | type mapping in `toTenant` |
 | Registration form submit nahi | `0036 submit_registration_request`, `registration-request-form.tsx` | 10-digit phone, required fields |

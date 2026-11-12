@@ -14,8 +14,6 @@
     "test:sql": "node supabase/tests/sql-tests.mjs"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1168.0",
-    "@aws-sdk/s3-request-presigner": "^3.1168.0",
     "@supabase/supabase-js": "^2.45.0",
     "clsx": "^2.1.1",
     "html-to-image": "^1.11.13",
@@ -36,6 +34,7 @@
     "@types/react-dom": "^19.0.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^4.1.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "wrangler": "^4.161.0"
   }
 }

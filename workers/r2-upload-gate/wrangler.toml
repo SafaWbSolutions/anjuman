@@ -7,6 +7,9 @@ command = ""
 
 [vars]
 R2_BUCKET_NAME = "anjuman-assets"
+MAX_UPLOAD_MB = "5"
+SUPABASE_URL = "https://oytcwpemrrnqrbrtonyu.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95dGN3cGVtcnJucXJicnRvbnl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzNzk2NDcsImV4cCI6MjEwOTk1NTY0N30.RI8LIr9a68avb4kbaW9SmLVUZyUejcgBv5AdPDi7ZsM"
 
 [[r2_buckets]]
 binding = "R2_BUCKET"
@@ -14,5 +17,4 @@ bucket_name = "anjuman-assets"
 
 [[kv_namespaces]]
 binding = "R2_QUOTA_KV"
-id = "<YOUR_KV_NAMESPACE_ID>"
-preview_id = "<YOUR_PREVIEW_KV_ID>"
+id = "ad0dc6f8f4bc44f486c53d61a0aec45d"

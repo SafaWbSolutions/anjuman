@@ -1,101 +1,91 @@
-# R2 Quota System
+# R2 Uploads + 10 GB Quota Hard Stop
 
-Hard stop at 10GB for Cloudflare R2 using Workers + KV + Cron.
+Two Cloudflare Workers handle public image storage and enforce a hard 10 GB
+limit. No R2 secret keys ever reach the browser.
 
-## Architecture
+| Worker | URL | Job |
+|---|---|---|
+| `r2-upload-gate` | https://r2-upload-gate.starservices0026.workers.dev | Validates the Supabase session, uploads images to R2, serves them back |
+| `r2-quota-checker` | https://r2-quota-checker.starservices0026.workers.dev | Daily 02:00 UTC: sums bucket size, sets/clears the `uploads_disabled` flag |
+
+KV namespace: `R2_QUOTA_KV` (`ad0dc6f8f4bc44f486c53d61a0aec45d`)
+R2 bucket: `anjuman-assets` (private; files are served through the Worker)
+
+## How the pieces fit
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  R2 Upload Gate │────▶│  R2_QUOTA_KV     │◀───│  Quota Checker  │
-│  (Worker)       │     │  (uploads_disabled)│   │  (Cron 2 AM)    │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-        │                       │                       │
-        ▼                       ▼                       ▼
-   Checks flag            Flag: true/false         Reads R2 usage
-   before upload          via KV                   via CF API
+Browser ──POST /upload (Supabase JWT + FormData)──▶ r2-upload-gate ──▶ R2
+Browser ──GET /files/<key>───────────────────────▶ r2-upload-gate ──▶ R2
+Daily 02:00 ──list bucket + sum sizes───────────▶ r2-quota-checker
+                         │
+                         ├─ ≥ 9.5 GB → webhook warning
+                         └─ ≥ 10 GB  → KV uploads_disabled=true
+                                        (all uploads return 403)
 ```
 
-## Workers
+- `avatars/...` → member profile photos (any signed-in user)
+- `tenants/<tenant-id>/...` → logo, masjid photo, UPI QR (office bearers only)
+- KYC / registration documents stay in the **private Supabase** bucket; they
+  are never public.
 
-### 1. r2-quota-checker (Cron: Daily 2 AM)
-- Reads R2 usage via Cloudflare API
-- If ≥ 9.5GB → sends warning alert
-- If ≥ 10GB → sets `uploads_disabled=true` in KV + critical alert
+## App configuration
 
-### 2. r2-upload-gate (HTTP)
-- Intercepts all upload requests
-- Checks `uploads_disabled` flag in KV
-- If disabled → returns 403
-- If enabled → forwards to R2 bucket
+`NEXT_PUBLIC_R2_UPLOAD_URL` (build-time) must point at the upload gate. The code
+falls back to the production URL above, and `.github/workflows/deploy.yml`
+passes it to the build.
 
-## Quick Deploy
+## Manual controls
 
 ```powershell
-# 1. Install wrangler
-npm install -g wrangler
-wrangler login
+cd workers\r2-quota-checker
 
-# 2. Deploy
-.\workers\deploy-quota-system.ps1 -AccountId "your-account-id" -ApiToken "your-api-token"
-```
+# Check flag
+wrangler kv key get uploads_disabled --binding R2_QUOTA_KV --remote
 
-## Manual Controls
+# Emergency stop
+wrangler kv key put uploads_disabled true --binding R2_QUOTA_KV --remote
 
-```bash
-# Disable uploads (emergency)
-wrangler kv:key put uploads_disabled true --binding R2_QUOTA_KV
-
-# Re-enable uploads (after quota reset)
-wrangler kv:key delete uploads_disabled --binding R2_QUOTA_KV
-
-# Check current flag
-wrangler kv:key get uploads_disabled --binding R2_QUOTA_KV
-
-# Tail logs
-wrangler tail r2-quota-checker
-wrangler tail r2-upload-gate
+# Re-enable (after freeing space / new billing cycle)
+wrangler kv key delete uploads_disabled --binding R2_QUOTA_KV --remote
 ```
 
 ## Alerts
 
-Configure `ALERT_WEBHOOK_URL` secret for Slack/Discord:
-- ⚠️ Warning at 9.5GB (95%)
-- 🚨 Critical at 10GB (uploads disabled)
-- ❌ Errors
-
-## Re-enabling After Limit Hit
-
-1. Wait for next billing cycle (or upgrade plan)
-2. Create new R2 API token in Cloudflare Dashboard
-3. Update `CF_API_TOKEN` secret: `wrangler secret put CF_API_TOKEN`
-3. Clear KV flag: `wrangler kv:key delete uploads_disabled --binding R2_QUOTA_KV`
-
-## Testing
+Set an optional Slack/Discord webhook:
 
 ```powershell
-# Deploy
-.\workers\deploy-quota-system.ps1 -AccountId "xxx" -ApiToken "xxx"
-
-# Test
-.\workers\test-quota-system.ps1 -AccountId "xxx" -ApiToken "xxx" -WorkerUrl "https://r2-upload-gate.xxx.workers.dev"
-
-# Simulate quota hit
-wrangler kv:key put uploads_disabled true --binding R2_QUOTA_KV
-# Try upload (should get 403)
-wrangler kv:key delete uploads_disabled --binding R2_QUOTA_KV
+wrangler secret put ALERT_WEBHOOK_URL --name r2-quota-checker
 ```
 
-## Secrets Required
+## Deploy
 
-| Secret | Description |
-|--------|-------------|
-| `CF_API_TOKEN` | Cloudflare API token with R2/KV/Workers permissions |
-| `CF_ACCOUNT_ID` | Cloudflare Account ID |
-| `ALERT_WEBHOOK_URL` | Optional: Slack/Discord webhook for alerts |
+```powershell
+cd workers\r2-quota-checker
+npm install
+wrangler deploy
+
+cd ..\r2-upload-gate
+npm install
+wrangler deploy
+```
+
+## Test
+
+```powershell
+# Worker is up
+curl https://r2-upload-gate.starservices0026.workers.dev/
+
+# Unauthenticated upload is rejected
+curl -X POST https://r2-upload-gate.starservices0026.workers.dev/upload
+
+# Quota kill switch
+wrangler kv key put uploads_disabled true --binding R2_QUOTA_KV --remote
+curl -X POST https://r2-upload-gate.starservices0026.workers.dev/upload
+# → 403 QUOTA_EXCEEDED
+wrangler kv key delete uploads_disabled --binding R2_QUOTA_KV --remote
+```
 
 ## Cost
 
-- Workers: Free (100k req/day)
-- KV: Free (1GB)
-- Cron: Free
-- **Total: $0/month**
+Workers free tier (100k requests/day), KV free tier, R2 storage only.
+No paid plan required.

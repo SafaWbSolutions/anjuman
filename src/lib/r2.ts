@@ -1,152 +1,59 @@
 /**
- * Cloudflare R2 Storage Utility
- * 
- * Uses S3-compatible API. Requires these env vars:
- * - R2_ACCOUNT_ID
- * - R2_ACCESS_KEY_ID
- * - R2_SECRET_ACCESS_KEY
- * - R2_BUCKET_NAME (default: "anjuman-assets")
- * - R2_PUBLIC_URL (optional, for custom domain)
+ * Public asset uploads go through the `r2-upload-gate` Worker.
+ *
+ * Why not upload directly from the browser? R2 secret keys must never
+ * reach the client bundle. The Worker checks the Supabase session,
+ * enforces the tenant role for branding, and writes to the bucket.
+ *
+ * Set NEXT_PUBLIC_R2_UPLOAD_URL at build time (Cloudflare Pages env or
+ * .env.local). The fallback keeps the current production deployment
+ * working without extra configuration.
  */
+import { supabase } from "./supabase";
 
-// Type declarations for Edge Runtime compatibility
-interface S3ClientConfig {
-  region: string;
-  endpoint: string;
-  credentials: {
-    accessKeyId: string;
-    secretAccessKey: string;
-  };
+const DEFAULT_UPLOAD_URL = "https://r2-upload-gate.starservices0026.workers.dev";
+
+export function r2UploadUrl(): string {
+  return (process.env.NEXT_PUBLIC_R2_UPLOAD_URL || DEFAULT_UPLOAD_URL).replace(
+    /\/$/,
+    ""
+  );
 }
 
-interface PutObjectCommandInput {
-  Bucket: string;
-  Key: string;
-  Body: Uint8Array | Buffer | ReadableStream;
-  ContentType?: string;
-  CacheControl?: string;
-  Metadata?: Record<string, string>;
-}
-
-interface GetObjectCommandInput {
-  Bucket: string;
-  Key: string;
-}
-
-interface DeleteObjectCommandInput {
-  Bucket: string;
-  Key: string;
-}
-
-interface S3Client {
-  send(command: any): Promise<any>;
-}
-
-// Dynamic import for S3 client (works in both Node and Edge)
-export async function getS3Client(): Promise<any> {
-  const { S3Client } = await import("@aws-sdk/client-s3");
-  return new S3Client({
-    region: "auto",
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID || "",
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
-    },
-  });
+/** Public URL for an object already stored in R2. */
+export function r2PublicUrl(key: string): string {
+  return `${r2UploadUrl()}/files/${key.replace(/^\/+/, "")}`;
 }
 
 /**
- * Upload a file to R2
+ * Upload a public image (member avatar, tenant logo, masjid photo, UPI QR).
+ * Returns the public URL.
  */
 export async function uploadToR2(
-  file: File | Buffer | Uint8Array,
+  file: File,
   key: string,
-  options: {
-    contentType?: string;
-    cacheControl?: string;
-    bucket?: string;
-  } = {}
+  _options: { contentType?: string; maxMb?: number } = {}
 ): Promise<string> {
-  const bucket = options.bucket || process.env.R2_BUCKET_NAME || "anjuman-assets";
-  
-  // Convert file to Uint8Array
-  let body: Uint8Array;
-  if (file instanceof File) {
-    const arrayBuffer = await file.arrayBuffer();
-    body = new Uint8Array(arrayBuffer);
-  } else if (file instanceof Buffer) {
-    body = new Uint8Array(file);
-  } else {
-    body = file;
+  const { data } = (await supabase?.auth.getSession()) ?? { data: { session: null } };
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Upload ke liye login zaroori hai");
+
+  const form = new FormData();
+  form.append("file", file);
+  form.append("key", key);
+
+  const res = await fetch(`${r2UploadUrl()}/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+
+  const body = (await res.json().catch(() => ({}))) as {
+    url?: string;
+    error?: string;
+  };
+  if (!res.ok || !body.url) {
+    throw new Error(body.error || `Upload failed (${res.status})`);
   }
-
-  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
-  const client = await getS3Client();
-
-  const command = new PutObjectCommand({
-    Bucket: process.env.R2_BUCKET_NAME || "anjuman-assets",
-    Key: key,
-    Body: body,
-    ContentType: options.contentType || "application/octet-stream",
-    CacheControl: options.cacheControl || "public, max-age=31536000, immutable",
-  } as PutObjectCommandInput);
-
-  await client.send(command);
-
-  // Return public URL
-  const publicUrl = process.env.R2_PUBLIC_URL 
-    ? `${process.env.R2_PUBLIC_URL}/${key}`
-    : `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${process.env.R2_BUCKET_NAME || "anjuman-assets"}/${key}`;
-  
-  return publicUrl;
-}
-
-/**
- * Delete a file from R2
- */
-export async function deleteFromR2(key: string, bucket?: string): Promise<void> {
-  const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
-  const client = await getS3Client();
-
-  const command = new DeleteObjectCommand({
-    Bucket: bucket || process.env.R2_BUCKET_NAME || "anjuman-assets",
-    Key: key,
-  } as DeleteObjectCommandInput);
-
-  await client.send(command);
-}
-
-/**
- * Generate a presigned URL for direct browser upload (optional)
- * Useful for large files to avoid proxying through your server
- */
-export async function generatePresignedUploadUrl(
-  key: string,
-  contentType: string,
-  expiresIn = 3600
-): Promise<{ uploadUrl: string; key: string }> {
-  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
-  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
-  const client = await getS3Client();
-
-  const command = new PutObjectCommand({
-    Bucket: process.env.R2_BUCKET_NAME || "anjuman-assets",
-    Key: key,
-    ContentType: contentType,
-  } as PutObjectCommandInput);
-
-  const uploadUrl = await getSignedUrl(client, command, { expiresIn });
-  return { uploadUrl, key };
-}
-
-/**
- * Check if R2 is configured
- */
-export function isR2Configured(): boolean {
-  return !!(
-    process.env.R2_ACCOUNT_ID &&
-    process.env.R2_ACCESS_KEY_ID &&
-    process.env.R2_SECRET_ACCESS_KEY &&
-    process.env.R2_BUCKET_NAME
-  );
+  return body.url;
 }

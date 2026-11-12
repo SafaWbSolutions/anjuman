@@ -42,6 +42,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL || 'https://oytcwpemrrnqrbrtonyu.supabase.co' }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95dGN3cGVtcnJucXJicnRvbnl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzNzk2NDcsImV4cCI6MjEwOTk1NTY0N30.RI8LIr9a68avb4kbaW9SmLVUZyUejcgBv5AdPDi7ZsM' }}
           NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL || 'https://anjuman.pages.dev' }}
+          NEXT_PUBLIC_R2_UPLOAD_URL: ${{ vars.NEXT_PUBLIC_R2_UPLOAD_URL || 'https://r2-upload-gate.starservices0026.workers.dev' }}
           NEXT_PUBLIC_DEMO_MODE: ${{ vars.NEXT_PUBLIC_DEMO_MODE || 'false' }}
 
       # NOTE: `secrets` cannot be used in an `if:` expression — doing so makes

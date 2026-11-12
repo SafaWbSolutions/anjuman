@@ -12,7 +12,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { isDemoMode, supabase } from "./supabase";
-import { uploadToR2, getS3Client } from "./r2";
+import { uploadToR2 } from "./r2";
 import {
   activeTenant,
   approvals as mockApprovals,
@@ -2299,7 +2299,7 @@ function toRegistrationRequest(r: Row): RegistrationRequest {
   };
 }
 
-/** Upload a KYC / proof document to R2 private registration-docs prefix. */
+/** Upload a KYC / proof document to the private registration-docs bucket. */
 export async function uploadRegistrationDoc(
   file: File,
   label: "sadar-kyc" | "khajanchi-kyc" | "proof",
@@ -2309,8 +2309,16 @@ export async function uploadRegistrationDoc(
 
   const ext =
     (file.name.split(".").pop() ?? "pdf").toLowerCase().replace(/[^a-z0-9]/g, "") || "pdf";
-  const path = `registrations/${token}/${label}-${Date.now()}.${ext}`;
-  return uploadToR2(file, path, { contentType: file.type || "application/octet-stream" });
+  const path = `requests/${token}/${label}-${Date.now()}.${ext}`;
+  const { error } = await client()
+    .storage.from("registration-docs")
+    .upload(path, file, {
+      upsert: false,
+      contentType: file.type || "application/octet-stream",
+    });
+  if (error) throw error;
+
+  return path;
 }
 
 /** Public (anon) submission from the login page. */
@@ -2378,21 +2386,11 @@ export async function getRegistrationDocUrl(
 ): Promise<string | null> {
   if (isDemoMode || !path) return null;
 
-  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
-  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-  const client = await getS3Client();
-
-  const command = new GetObjectCommand({
-    Bucket: process.env.R2_BUCKET_NAME || "anjuman-assets",
-    Key: path,
-  });
-
-  try {
-    const signedUrl = await getSignedUrl(client, command, { expiresIn });
-    return signedUrl;
-  } catch {
-    return null;
-  }
+  const { data, error } = await client()
+    .storage.from("registration-docs")
+    .createSignedUrl(path, expiresIn);
+  if (error) return null;
+  return data?.signedUrl ?? null;
 }
 
 /** Upload UPI QR image to R2. */

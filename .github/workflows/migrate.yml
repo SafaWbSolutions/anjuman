@@ -17,9 +17,10 @@ on:
       file:
         description: "Migration file path"
         required: true
-        default: "supabase/migrations/0044_collection_date.sql"
+        default: "supabase/migrations/0045_tenant_masjid_photo.sql"
   push:
     paths:
+      - "supabase/migrations/0045_tenant_masjid_photo.sql"
       - "supabase/migrations/0044_collection_date.sql"
       - "supabase/migrations/0043_reclassify_raziya_gifts.sql"
       - "supabase/migrations/0042_rebuild_raziya_monthly.sql"
@@ -83,7 +84,7 @@ jobs:
       - name: Apply migration
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0044_collection_date.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0045_tenant_masjid_photo.sql' }}
         run: |
           set -euo pipefail
           test -f "$FILE"
@@ -93,7 +94,7 @@ jobs:
       - name: Verify migration result
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0044_collection_date.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0045_tenant_masjid_photo.sql' }}
         run: |
           set -euo pipefail
           case "$FILE" in
@@ -352,6 +353,22 @@ jobs:
             end if;
           end $$;
           select 'collection date logic OK' as result;
+          SQL
+              ;;
+            *0045*)
+              psql "$DB_URL_RUN" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          begin
+            if not exists (
+              select 1 from information_schema.columns
+               where table_schema = 'public'
+                 and table_name = 'tenants'
+                 and column_name = 'masjid_photo_url'
+            ) then
+              raise exception 'tenants.masjid_photo_url is missing';
+            end if;
+          end $$;
+          select 'tenants.masjid_photo_url OK' as result;
           SQL
               ;;
             *)

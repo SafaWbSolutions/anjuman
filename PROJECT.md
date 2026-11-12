@@ -4,7 +4,7 @@
 > database me kya hai, paisa kaise calculate hota hai, aur bug aaye to **direct kis file me
 > haath daalna hai**. Naya developer pehle ye file padhe, phir code khole.
 >
-> **Last verified:** 12 Nov 2026 · migration head `0038` · dashboard error fix deployed.
+> **Last verified:** 12 Nov 2026 · migration head `0039` · dashboard error fix deployed.
 
 ---
 
@@ -511,6 +511,7 @@ aate hain.
 | `set_member_prefix()`, `set_fee_cycle()` | tenant settings |
 | `update_member_details()` | guarded member edit |
 | `remove_member()` | hard delete only if no financial history, else archive |
+| `restore_member()` | archived member ko wapas active (Sadar / platform admin) |
 | `generate_member_dues(member, from, to)` | backdated range, never before `joined_on` |
 | `generate_dues_range(...)` | member onboarding date-range total |
 | `generate_monthly_invoices(...)` | idempotent monthly run |
@@ -626,6 +627,7 @@ hai).
 | 0036 | `qr_bank_registration.sql` | tenant QR/bank fields, `registration_requests`, RPCs, private bucket |
 | 0037 | `payment_settings_rpc.sql` | scoped `save_payment_settings` |
 | 0038 | `fix_dashboard_settled_at.sql` | `dashboard_snapshot` now uses `verified_at`; fixes `column "settled_at" does not exist` |
+| 0039 | `restore_member.sql` | Sadar can restore an archived member back to active |
 
 ### Migration rules
 
@@ -829,10 +831,18 @@ har table par role-level nahi. Iska matlab:
 
 ### 15.7 Member removal
 
-- **Sadar** remove kar sakta hai.
-- `remove_member()`:
+- **Sadar** (ya platform admin) remove kar sakta hai.
+- `remove_member()` (0027):
   - Agar member ka koi financial history **nahi** hai → hard delete.
   - Agar history hai → **archive + login disable** (data preserve).
+- Members page ka default filter **Active** hai, isliye archive hua member list se
+  turant hat jata hai. Use dekhne ke liye status filter me **Inactive / archived**
+  chunein.
+- `restore_member()` (0039) archived member ko wapas **active** karta hai
+  (Sadar / platform admin). Login dobara nahi khulta — uske liye **Create login**
+  use karein; `admin-create-user` wahi auth account reuse karta hai.
+- Archived member ke liye Collect / Create login / Reset payments buttons chhupe
+  rehte hain, kyunki inactive member par naya paisa nahi lena chahiye.
 - Payment reset alag process hai aur **Khajanchi approval** mandatory.
 
 ### 15.8 Payment correction & reset
@@ -1216,7 +1226,7 @@ npm.cmd run deploy     # wrangler pages deploy out --project-name=anjuman --bran
 | Zakat/Sadqa/Gift mix ho raha | `0025`, `0016`, donation fund select | fund code sahi? |
 | Expense approve nahi ho raha | `approve_expense()`, `guard_expense_update` | maker-checker, role |
 | Advance apply nahi ho raha | `invoices_apply_advance()`, `apply_member_advance()` | dual approval complete? |
-| Member delete nahi ho raha | `remove_member()` (0027) | financial history? archive hoga |
+| Member delete nahi ho raha | `remove_member()` (0027) | financial history? archive hoga; default Active filter me row hat jayegi |
 | Payment reset nahi ho raha | `request_payment_reset()` / `apply_member_payment_reset()` | Khajanchi approval chahiye |
 | Member code duplicate/galat check digit | `assign_member_code()`, `utils.checkDigit` | serial/tenant code |
 | Monthly dues nahi ban rahe | `generate_monthly_invoices()`, `AppShell` self-heal, nightly | `fee_start_period`, idempotency |
@@ -1430,6 +1440,7 @@ queue_notice_broadcast            queue_payment_receipt
 queue_reminders                   reject_donation
 reject_expense                    reject_payment
 remove_member                     request_fee_change
+restore_member
 request_payment_edit              request_payment_reset
 request_waiver                    requeue_notifications
 reverse_payment                   run_daily_maintenance

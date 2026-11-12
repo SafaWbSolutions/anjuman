@@ -2477,6 +2477,16 @@ export async function removeMember(
   return String(data) === "ARCHIVED" ? "ARCHIVED" : "DELETED";
 }
 
+/** Sadar / platform admin brings an archived member back to the Active list. */
+export async function restoreMember(memberId: string): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client().rpc("restore_member", {
+    p_member: memberId,
+  });
+  if (error) throw error;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Member notifications
 // ═══════════════════════════════════════════════════════════════

@@ -38,6 +38,7 @@ import {
   requestFeeChange,
   requestPaymentEdit,
   requestPaymentReset,
+  restoreMember,
   saveMemberDetails,
   uploadAvatar,
 } from "@/lib/repo";
@@ -87,7 +88,10 @@ function errorText(e: unknown, fallback: string): string {
 export default function MembersPage() {
   const [q, setQ] = useState("");
   const [mohalla, setMohalla] = useState("all");
-  const [status, setStatus] = useState("all");
+  // Removed members with financial history are archived (inactive), not
+  // deleted. Default to active so the member actually disappears from the
+  // list after removal; archived rows are still available via the filter.
+  const [status, setStatus] = useState("active");
   const [type, setType] = useState("all");
   const [selected, setSelected] = useState<Member | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -179,13 +183,15 @@ export default function MembersPage() {
 
   const tenantName = tenant?.name ?? activeTenant.name;
   const village = tenant?.village ?? activeTenant.village;
+  const activeCount = members.filter((m) => m.status === "active").length;
+  const archivedCount = members.filter((m) => m.status === "inactive").length;
 
   return (
     <>
       <PageHeader
         eyebrow="Community"
         title="Members"
-        description={`${members.length} registered members across ${new Set(members.map((m) => m.household).filter(Boolean)).size} households in ${village}.`}
+        description={`${activeCount} active member${activeCount === 1 ? "" : "s"}${archivedCount ? ` · ${archivedCount} archived` : ""} across ${new Set(members.map((m) => m.household).filter(Boolean)).size} households in ${village}.`}
         actions={
           <>
             <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
@@ -285,19 +291,19 @@ export default function MembersPage() {
           onChange={(e) => setStatus(e.target.value)}
           className="h-9 w-auto py-1.5 text-[12.5px]"
         >
-          <option value="all">Any status</option>
           <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
+          <option value="inactive">Inactive / archived</option>
           <option value="pending">Pending</option>
+          <option value="all">All statuses</option>
         </Select>
-        {(mohalla !== "all" || type !== "all" || status !== "all" || q) && (
+        {(mohalla !== "all" || type !== "all" || status !== "active" || q) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setMohalla("all");
               setType("all");
-              setStatus("all");
+              setStatus("active");
               setQ("");
             }}
           >
@@ -327,7 +333,7 @@ export default function MembersPage() {
                   setQ("");
                   setMohalla("all");
                   setType("all");
-                  setStatus("all");
+                  setStatus("active");
                 }}
               >
                 Clear filters
@@ -431,8 +437,8 @@ export default function MembersPage() {
             const result = await removeMember(m.id);
             toast(
               result === "ARCHIVED"
-                ? `${m.name} inactive ho gaya (financial history safe hai)`
-                : `${m.name} remove ho gaya`
+                ? `${m.name} archive ho gaya — Active list se hat gaya. "Inactive / archived" filter me milega; receipts aur ledger safe hain.`
+                : `${m.name} permanently remove ho gaya`
             );
             setSelected(null);
             await load();
@@ -446,6 +452,16 @@ export default function MembersPage() {
             toast("Reset request Khajanchi ke paas chali gayi — approve hone par payments reset honge");
           } catch (e) {
             toast(errorText(e, "Reset request fail"), "error");
+          }
+        }}
+        onRestore={async (m) => {
+          try {
+            await restoreMember(m.id);
+            toast(`${m.name} wapas Active list me aa gaya. Login dobara chahiye to "Create login" use karein.`);
+            setSelected(null);
+            await load();
+          } catch (e) {
+            toast(errorText(e, "Member restore nahi hua"), "error");
           }
         }}
         onEditPayment={(p) => setEditPayment(p)}
@@ -589,6 +605,7 @@ function MemberDrawer({
   onEdit,
   onRemove,
   onRequestReset,
+  onRestore,
   onEditPayment,
 }: {
   member: Member | null;
@@ -601,12 +618,14 @@ function MemberDrawer({
   onEdit: (member: Member) => void;
   onRemove: (member: Member) => Promise<void>;
   onRequestReset: (member: Member, reason: string) => Promise<void>;
+  onRestore: (member: Member) => Promise<void>;
   onEditPayment: (payment: Payment) => void;
 }) {
   const { user } = useAuth();
   const [receipt, setReceipt] = useState<ReceiptInfo | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetReason, setResetReason] = useState("");
   const [resetting, setResetting] = useState(false);
@@ -623,6 +642,9 @@ function MemberDrawer({
     .reduce((s, i) => s + i.paidPaise, 0);
   const dueTotal = dues.reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0);
   const canRemove = user?.role === "sadar" || user?.role === "super_admin";
+  const isArchived = member.status === "inactive";
+  // Mirrors the DB rule: receipts / paid invoices keep the row (archive).
+  const hasFinance = pays.length > 0 || paidTotal > 0;
   const canEditPayment =
     user?.role === "sadar" ||
     user?.role === "secretary" ||
@@ -648,9 +670,10 @@ function MemberDrawer({
             <span className="font-medium text-ink-700">{tenantName}</span>
           </p>
           <div className="flex flex-wrap gap-2">
-            {(user?.role === "sadar" ||
-              user?.role === "secretary" ||
-              user?.role === "super_admin") && (
+            {!isArchived &&
+              (user?.role === "sadar" ||
+                user?.role === "secretary" ||
+                user?.role === "super_admin") && (
               <Button
                 variant="secondary"
                 size="sm"
@@ -666,7 +689,7 @@ function MemberDrawer({
                 <RotateCcw className="h-3.5 w-3.5" /> Reset payments
               </Button>
             )}
-            {canRemove && (
+            {canRemove && !isArchived && (
               <Button
                 variant="secondary"
                 size="sm"
@@ -686,15 +709,46 @@ function MemberDrawer({
                 }}
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                {confirmRemove ? "Confirm remove" : "Remove"}
+                {confirmRemove
+                  ? hasFinance
+                    ? "Confirm archive"
+                    : "Confirm remove"
+                  : hasFinance
+                    ? "Archive member"
+                    : "Remove member"}
               </Button>
+            )}
+            {isArchived && canRemove && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="text-emerald-700"
+                loading={restoring}
+                onClick={async () => {
+                  setRestoring(true);
+                  try {
+                    await onRestore(member);
+                  } finally {
+                    setRestoring(false);
+                  }
+                }}
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Restore member
+              </Button>
+            )}
+            {isArchived && (
+              <span className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11.5px] text-amber-800">
+                Archived — Active list me nahi dikhta. Receipts aur ledger safe hain.
+              </span>
             )}
             <Button variant="secondary" size="sm" onClick={() => onEdit(member)}>
               <Pencil className="h-3.5 w-3.5" /> Edit
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => onCreateLogin(member)}>
-              <UserPlus className="h-3.5 w-3.5" /> Create login
-            </Button>
+            {!isArchived && (
+              <Button variant="secondary" size="sm" onClick={() => onCreateLogin(member)}>
+                <UserPlus className="h-3.5 w-3.5" /> Create login
+              </Button>
+            )}
             <Button
               variant="secondary"
               size="sm"
@@ -704,9 +758,11 @@ function MemberDrawer({
             >
               <IdCard className="h-3.5 w-3.5" /> ID card
             </Button>
-            <Button size="sm" onClick={() => toast("Payment entry opened")}>
-              <Wallet className="h-3.5 w-3.5" /> Collect
-            </Button>
+            {!isArchived && (
+              <Button size="sm" onClick={() => toast("Payment entry opened")}>
+                <Wallet className="h-3.5 w-3.5" /> Collect
+              </Button>
+            )}
           </div>
           {resetOpen && (
             <div className="w-full rounded-xl border border-amber-200 bg-amber-50 p-3">
@@ -746,9 +802,19 @@ function MemberDrawer({
           )}
           {confirmRemove && (
             <p className="w-full rounded-lg bg-red-50 px-3 py-2 text-[11.5px] text-red-700">
-              Pakka remove karna hai? Jis member ka koi receipt ya paid invoice hai wo
-              delete nahi hoga — ledger safe rakhne ke liye sirf <b>inactive</b> ho
-              jayega aur uski login access band ho jayegi.
+              {hasFinance ? (
+                <>
+                  Is member ka financial history hai, isliye permanent delete nahi hoga.
+                  Remove karne par ye <b>archive</b> hoga: Active list se hat jayega,
+                  login band ho jayegi, aur receipt/ledger safe rahega. Wapas dekhna ho to
+                  status filter me <b>Inactive / archived</b> chunein.
+                </>
+              ) : (
+                <>
+                  Is member ka koi receipt ya paid invoice nahi hai, isliye ye{" "}
+                  <b>permanently delete</b> ho jayega.
+                </>
+              )}
             </p>
           )}
         </div>

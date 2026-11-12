@@ -193,20 +193,36 @@ function OfficeDashboard() {
       return {
         label: d.toLocaleString("en-IN", { month: "short" }),
         collected: payments
-          .filter((p) => p.status === "verified" && p.createdAt.startsWith(key))
+          .filter(
+            (p) =>
+              p.status === "verified" &&
+              (p.settledAt ?? p.createdAt).startsWith(key)
+          )
           .reduce((s, p) => s + p.amountPaise, 0),
         spent: expenses
-          .filter((e) => e.status === "approved" && e.createdAt.startsWith(key))
+          .filter(
+            (e) =>
+              e.status === "approved" &&
+              (e.approvedAt ?? e.createdAt).startsWith(key)
+          )
           .reduce((s, e) => s + e.amountPaise, 0),
       };
     });
   }, [payments, expenses]);
 
-  const totalBilled = invoices.reduce((s, i) => s + i.amountPaise, 0);
-  const totalPaid = invoices.reduce((s, i) => s + i.paidPaise, 0);
+  const totalBilled = invoices
+    .filter((i) => i.status !== "waived")
+    .reduce((s, i) => s + i.amountPaise, 0);
+  const totalPaid = invoices
+    .filter((i) => i.status !== "waived")
+    .reduce((s, i) => s + i.paidPaise, 0);
   const collectionRate = totalBilled ? Math.round((totalPaid / totalBilled) * 100) : 0;
   const spentThisMonth = expenses
-    .filter((e) => e.status === "approved" && e.createdAt.startsWith(CURRENT_MONTH))
+    .filter(
+      (e) =>
+        e.status === "approved" &&
+        (e.approvedAt ?? e.createdAt).startsWith(CURRENT_MONTH)
+    )
     .reduce((s, e) => s + e.amountPaise, 0);
   const balance = funds.reduce((s, f) => s + f.balancePaise, 0);
   const activeMembers = members.filter((m) => m.status === "active").length;

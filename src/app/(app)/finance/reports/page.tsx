@@ -132,22 +132,40 @@ export default function ReportsPage() {
   const periodOptions = useMemo(() => {
     const set = new Set<string>([currentPeriod(), period]);
     for (const i of invoices) set.add(i.period);
-    for (const p of payments) set.add(p.createdAt.slice(0, 7));
-    for (const d of donations) set.add(d.createdAt.slice(0, 7));
-    for (const e of expenses) set.add(e.createdAt.slice(0, 7));
+    for (const p of payments) set.add((p.settledAt ?? p.createdAt).slice(0, 7));
+    for (const d of donations) set.add((d.verifiedAt ?? d.createdAt).slice(0, 7));
+    for (const e of expenses) set.add((e.approvedAt ?? e.createdAt).slice(0, 7));
     return [...set].filter(Boolean).sort().reverse().slice(0, 14);
   }, [invoices, payments, donations, expenses, period]);
 
   // ── Money in / out for a period ──────────────────────────────────
   const collectedFor = useCallback(
     (p: string) =>
-      payments.filter((x) => x.status === "verified" && x.createdAt.startsWith(p)).reduce((s, x) => s + x.amountPaise, 0) +
-      donations.filter((x) => x.status === "verified" && x.createdAt.startsWith(p)).reduce((s, x) => s + x.amountPaise, 0),
+      payments
+        .filter(
+          (x) =>
+            x.status === "verified" &&
+            (x.settledAt ?? x.createdAt).startsWith(p)
+        )
+        .reduce((s, x) => s + x.amountPaise, 0) +
+      donations
+        .filter(
+          (x) =>
+            x.status === "verified" &&
+            (x.verifiedAt ?? x.createdAt).startsWith(p)
+        )
+        .reduce((s, x) => s + x.amountPaise, 0),
     [payments, donations]
   );
   const spentFor = useCallback(
     (p: string) =>
-      expenses.filter((x) => x.status === "approved" && x.createdAt.startsWith(p)).reduce((s, x) => s + x.amountPaise, 0),
+      expenses
+        .filter(
+          (x) =>
+            x.status === "approved" &&
+            (x.approvedAt ?? x.createdAt).startsWith(p)
+        )
+        .reduce((s, x) => s + x.amountPaise, 0),
     [expenses]
   );
 
@@ -178,10 +196,10 @@ export default function ReportsPage() {
   const outstanding = useMemo(
     () =>
       invoices
-        .filter((i) => i.status !== "waived")
+        .filter((i) => i.status !== "waived" && memberMap.get(i.memberId)?.status === "active")
         .map((i) => ({ invoice: i, due: Math.max(0, i.amountPaise - i.paidPaise) }))
         .filter((x) => x.due > 0),
-    [invoices]
+    [invoices, memberMap]
   );
 
   const ageing = useMemo(() => {
@@ -226,16 +244,35 @@ export default function ReportsPage() {
           ...periodOptions.map((p) => {
             const billed = invoices.filter((i) => i.period === p && i.status !== "waived").reduce((s, i) => s + i.amountPaise, 0);
             const coll = collectedFor(p);
-            return [periodLabel(p), billed / 100, coll / 100, Math.max(0, billed - coll) / 100];
+            const due = invoices
+              .filter((i) => i.period === p && i.status !== "waived")
+              .reduce((s, i) => s + Math.max(0, i.amountPaise - i.paidPaise), 0);
+            return [periodLabel(p), billed / 100, coll / 100, due / 100];
           }),
         ];
       case "fund":
         return [
           ["Fund", "Restricted", "Receipts", "Payments", "Closing"],
           ...funds.map((f) => {
-            const credits = ledger.filter((l) => l.account === f.name).reduce((s, l) => s + l.creditPaise, 0);
-            const debits = ledger.filter((l) => l.account === f.name).reduce((s, l) => s + l.debitPaise, 0);
-            return [f.name, f.restricted ? "Yes" : "No", credits / 100, debits / 100, f.balancePaise / 100];
+            const donationIn = donations
+              .filter((d) => d.status === "verified" && d.fundId === f.id)
+              .reduce((s, d) => s + d.amountPaise, 0);
+            const feeIn =
+              f.code === "GEN"
+                ? payments
+                    .filter((p) => p.status === "verified")
+                    .reduce((s, p) => s + p.amountPaise, 0)
+                : 0;
+            const spent = expenses
+              .filter((e) => e.status === "approved" && e.fundId === f.id)
+              .reduce((s, e) => s + e.amountPaise, 0);
+            return [
+              f.name,
+              f.restricted ? "Yes" : "No",
+              (donationIn + feeIn) / 100,
+              spent / 100,
+              f.balancePaise / 100,
+            ];
           }),
         ];
       case "ageing":

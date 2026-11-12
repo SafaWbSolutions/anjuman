@@ -107,7 +107,7 @@ export default function ExpensesPage() {
   const approved = expenses.filter((e) => e.status === "approved");
   const pending = expenses.filter((e) => e.status === "pending");
   const thisMonth = approved
-    .filter((e) => e.createdAt.startsWith(CURRENT_MONTH))
+    .filter((e) => (e.approvedAt ?? e.createdAt).startsWith(CURRENT_MONTH))
     .reduce((s, e) => s + e.amountPaise, 0);
 
   const fundColors = ["#10b981", "#0ea5e9", "#8b5cf6", "#f59e0b", "#ef4444"];

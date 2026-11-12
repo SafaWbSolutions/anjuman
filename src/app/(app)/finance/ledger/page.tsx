@@ -14,7 +14,14 @@ import {
   Search,
   ShieldCheck,
 } from "lucide-react";
-import { getDashboard, listLedger } from "@/lib/repo";
+import {
+  getDashboard,
+  listDonations,
+  listExpenses,
+  listFunds,
+  listLedger,
+  listPayments,
+} from "@/lib/repo";
 import {
   Badge,
   Button,
@@ -39,6 +46,9 @@ export default function LedgerPage() {
   const [selected, setSelected] = useState<LedgerEntry | null>(null);
 
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
+  const [inflowPaise, setInflowPaise] = useState(0);
+  const [outflowPaise, setOutflowPaise] = useState(0);
+  const [bookPaise, setBookPaise] = useState(0);
   const [ledgerOk, setLedgerOk] = useState(true);
   const [brokenAt, setBrokenAt] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,10 +58,28 @@ export default function LedgerPage() {
     setLoading(true);
     setError(null);
     try {
-      const [rows, snapshot] = await Promise.all([listLedger(), getDashboard()]);
+      const [rows, snapshot, pays, dons, exps, funds] = await Promise.all([
+        listLedger(),
+        getDashboard(),
+        listPayments(),
+        listDonations(),
+        listExpenses(),
+        listFunds(),
+      ]);
       setEntries(rows);
       setLedgerOk(snapshot.ledgerOk);
       setBrokenAt(snapshot.ledgerBrokenAtSeq);
+
+      // Money totals come from the verified documents, never from the
+      // ledger's debit/credit columns (their convention predates 0034).
+      setInflowPaise(
+        pays.filter((p) => p.status === "verified").reduce((s, p) => s + p.amountPaise, 0) +
+          dons.filter((d) => d.status === "verified").reduce((s, d) => s + d.amountPaise, 0)
+      );
+      setOutflowPaise(
+        exps.filter((e) => e.status === "approved").reduce((s, e) => s + e.amountPaise, 0)
+      );
+      setBookPaise(funds.reduce((s, f) => s + f.balancePaise, 0));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ledger load nahi ho saka");
     } finally {
@@ -81,7 +109,9 @@ export default function LedgerPage() {
 
   const debit = entries.reduce((s, e) => s + e.debitPaise, 0);
   const credit = entries.reduce((s, e) => s + e.creditPaise, 0);
-  const balance = debit - credit;
+  const balance = bookPaise;
+  void debit;
+  void credit;
 
   const typeTone: Record<string, "green" | "red" | "blue" | "violet" | "slate" | "amber"> = {
     payment: "green",
@@ -171,9 +201,9 @@ export default function LedgerPage() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total inflow" value={formatINR(debit)} sub={`${entries.length} entries`} icon={ArrowDownLeft} tone="green" />
-        <StatCard label="Total outflow" value={formatINR(credit)} sub="Expenses & reversals" icon={ArrowUpRight} tone="red" />
-        <StatCard label="Book balance" value={formatINR(balance)} sub="Debits − credits" icon={BookOpenCheck} tone="brand" />
+        <StatCard label="Total collected" value={formatINR(inflowPaise)} sub={`${entries.length} ledger entries`} icon={ArrowDownLeft} tone="green" />
+        <StatCard label="Total spent" value={formatINR(outflowPaise)} sub="Approved expenses" icon={ArrowUpRight} tone="red" />
+        <StatCard label="Fund balance" value={formatINR(balance)} sub="Collections + donations − expenses" icon={BookOpenCheck} tone="brand" />
         <StatCard
           label="Chain integrity"
           value={ledgerOk ? "Verified" : "Broken"}

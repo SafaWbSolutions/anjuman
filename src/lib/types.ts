@@ -129,6 +129,7 @@ export interface Expense {
   enteredBy: string;
   approvedBy?: string;
   createdAt: string;
+  approvedAt?: string;
   note?: string;
 }
 

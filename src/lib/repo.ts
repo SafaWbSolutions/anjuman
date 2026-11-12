@@ -209,6 +209,7 @@ function toExpense(r: Row): Expense {
     enteredBy: r.entered_by ?? "",
     approvedBy: r.approved_by ?? undefined,
     createdAt: r.created_at,
+    approvedAt: r.approved_at ?? undefined,
     note: r.note ?? undefined,
   };
 }

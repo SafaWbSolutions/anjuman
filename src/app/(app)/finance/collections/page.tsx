@@ -150,7 +150,11 @@ export default function CollectionsPage() {
 
   const monthKey = new Date().toISOString().slice(0, 7);
   const collectedThisMonth = payments
-    .filter((p) => p.status === "verified" && p.createdAt.startsWith(monthKey))
+    .filter(
+      (p) =>
+        p.status === "verified" &&
+        (p.settledAt ?? p.createdAt).startsWith(monthKey)
+    )
     .reduce((s, p) => s + p.amountPaise, 0);
   const verifiedTotal = payments
     .filter((p) => p.status === "verified")

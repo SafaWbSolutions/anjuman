@@ -120,10 +120,17 @@ export default function DonationsPage() {
   );
 
   const thisMonth = donations
-    .filter((d) => d.createdAt.startsWith(new Date().toISOString().slice(0, 7)))
+    .filter(
+      (d) =>
+        d.status === "verified" &&
+        (d.verifiedAt ?? d.createdAt).startsWith(new Date().toISOString().slice(0, 7))
+    )
     .reduce((s, d) => s + d.amountPaise, 0);
   const zakat = donations
-    .filter((d) => isZakatFund(fundMap.get(d.fundId)?.name))
+    .filter(
+      (d) =>
+        d.status === "verified" && isZakatFund(fundMap.get(d.fundId)?.name)
+    )
     .reduce((s, d) => s + d.amountPaise, 0);
 
   const pendingCount = donations.filter((d) => d.status === "pending").length;
@@ -158,7 +165,7 @@ export default function DonationsPage() {
         <StatCard
           label="Received this month"
           value={formatINR(thisMonth)}
-          sub={`${donations.filter((d) => d.createdAt.startsWith(new Date().toISOString().slice(0, 7))).length} donations`}
+          sub={`${donations.filter((d) => d.status === "verified" && (d.verifiedAt ?? d.createdAt).startsWith(new Date().toISOString().slice(0, 7))).length} verified donations`}
           icon={HeartHandshake}
           tone="green"
         />

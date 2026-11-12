@@ -6,6 +6,9 @@ One platform, many committees — each with completely isolated data.
 > Ye admin panel pehle **demo mode** me chalta hai (sample data ke saath), taaki
 > bina kuch setup kiye sab kuch dekh sako. Supabase keys daalte hi real ban jata hai.
 
+> **Naya developer? Pehle [`PROJECT.md`](./PROJECT.md) padhein.** Usme poora file map,
+> database schema, RPCs, money rules, workflows, troubleshooting aur bug-fix checklist hai.
+
 ---
 
 ## Why this exists

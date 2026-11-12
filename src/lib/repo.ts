@@ -12,6 +12,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { isDemoMode, supabase } from "./supabase";
+import { uploadToR2, getS3Client } from "./r2";
 import {
   activeTenant,
   approvals as mockApprovals,
@@ -2220,42 +2221,28 @@ export async function saveMyProfile(patch: MyProfilePatch): Promise<void> {
   if (error) throw error;
 }
 
-/** Upload a profile picture to the public avatars bucket; returns its URL. */
+/** Upload a profile picture to R2; returns its URL. */
 export async function uploadAvatar(file: File, userId: string): Promise<string> {
   if (isDemoMode) return "";
 
   const ext =
     (file.name.split(".").pop() ?? "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
-  const path = `${userId}/avatar-${Date.now()}.${ext}`;
-  const { error } = await client()
-    .storage.from("avatars")
-    .upload(path, file, {
-      cacheControl: "3600",
-      upsert: true,
-      contentType: file.type || "image/jpeg",
-    });
-  if (error) throw error;
-
-  return client().storage.from("avatars").getPublicUrl(path).data.publicUrl;
+  const path = `avatars/${userId}/avatar-${Date.now()}.${ext}`;
+  return uploadToR2(file, path, { contentType: file.type || "image/jpeg" });
 }
 
-/** Upload the anjuman's own UPI QR image; returns its public URL. */
-export async function uploadPaymentQr(file: File, tenantId: string): Promise<string> {
+/** Upload tenant branding (logo / masjid photo) to R2 tenant-branding prefix. */
+export async function uploadTenantBranding(
+  file: File,
+  tenantId: string,
+  kind: "logo" | "masjid"
+): Promise<string> {
   if (isDemoMode) return "";
 
   const ext =
     (file.name.split(".").pop() ?? "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
-  const path = `qr/${tenantId}/upi-qr-${Date.now()}.${ext}`;
-  const { error } = await client()
-    .storage.from("avatars")
-    .upload(path, file, {
-      cacheControl: "3600",
-      upsert: true,
-      contentType: file.type || "image/png",
-    });
-  if (error) throw error;
-
-  return client().storage.from("avatars").getPublicUrl(path).data.publicUrl;
+  const path = `tenants/${tenantId}/${kind}-${Date.now()}.${ext}`;
+  return uploadToR2(file, path, { contentType: file.type || "image/png" });
 }
 
 /* ── Registration requests ──────────────────────────────────── */
@@ -2312,7 +2299,7 @@ function toRegistrationRequest(r: Row): RegistrationRequest {
   };
 }
 
-/** Upload a KYC / proof document to the private registration-docs bucket. */
+/** Upload a KYC / proof document to R2 private registration-docs prefix. */
 export async function uploadRegistrationDoc(
   file: File,
   label: "sadar-kyc" | "khajanchi-kyc" | "proof",
@@ -2322,16 +2309,8 @@ export async function uploadRegistrationDoc(
 
   const ext =
     (file.name.split(".").pop() ?? "pdf").toLowerCase().replace(/[^a-z0-9]/g, "") || "pdf";
-  const path = `requests/${token}/${label}-${Date.now()}.${ext}`;
-  const { error } = await client()
-    .storage.from("registration-docs")
-    .upload(path, file, {
-      upsert: false,
-      contentType: file.type || "application/octet-stream",
-    });
-  if (error) throw error;
-
-  return path;
+  const path = `registrations/${token}/${label}-${Date.now()}.${ext}`;
+  return uploadToR2(file, path, { contentType: file.type || "application/octet-stream" });
 }
 
 /** Public (anon) submission from the login page. */
@@ -2399,11 +2378,31 @@ export async function getRegistrationDocUrl(
 ): Promise<string | null> {
   if (isDemoMode || !path) return null;
 
-  const { data, error } = await client()
-    .storage.from("registration-docs")
-    .createSignedUrl(path, expiresIn);
-  if (error) return null;
-  return data?.signedUrl ?? null;
+  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = await getS3Client();
+
+  const command = new GetObjectCommand({
+    Bucket: process.env.R2_BUCKET_NAME || "anjuman-assets",
+    Key: path,
+  });
+
+  try {
+    const signedUrl = await getSignedUrl(client, command, { expiresIn });
+    return signedUrl;
+  } catch {
+    return null;
+  }
+}
+
+/** Upload UPI QR image to R2. */
+export async function uploadPaymentQr(file: File, tenantId: string): Promise<string> {
+  if (isDemoMode) return "";
+
+  const ext =
+    (file.name.split(".").pop() ?? "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
+  const path = `tenants/${tenantId}/upi-qr-${Date.now()}.${ext}`;
+  return uploadToR2(file, path, { contentType: file.type || "image/png" });
 }
 
 export interface MemberDetailsPatch {

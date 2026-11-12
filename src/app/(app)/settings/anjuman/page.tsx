@@ -13,7 +13,7 @@ import {
   Upload,
 } from "lucide-react";
 import type { Tenant } from "@/lib/types";
-import { getCurrentTenant, saveTenantProfile, setMemberPrefix, uploadAvatar } from "@/lib/repo";
+import { getCurrentTenant, saveTenantProfile, setMemberPrefix, uploadTenantBranding } from "@/lib/repo";
 import { INDIAN_STATES as STATES } from "@/lib/states";
 import {
   Badge,
@@ -63,8 +63,7 @@ export default function AnjumanProfilePage() {
 
     setUploadingLogo(true);
     try {
-      // Use the current user's ID for the upload path, then we'll use the returned URL
-      const url = await uploadAvatar(file, "tenant-logo-" + Date.now());
+      const url = await uploadTenantBranding(file, tenant?.id || "unknown", "logo");
       setTenant((prev) => (prev ? { ...prev, logoUrl: url } : null));
       toast("Logo upload ho gaya");
     } catch (err) {
@@ -83,12 +82,8 @@ export default function AnjumanProfilePage() {
 
     setUploadingMasjid(true);
     try {
-      const url = await uploadAvatar(file, "tenant-masjid-" + Date.now());
-      // Note: tenants table doesn't have masjid_photo_url column yet,
-      // but we can store it in address field or as a note for now
-      // For now, we'll just show it in the UI and include in save
+      const url = await uploadTenantBranding(file, tenant?.id || "unknown", "masjid");
       toast("Masjid photo upload ho gaya");
-      // Store in a custom property for now
       setTenant((prev) => (prev ? { ...prev, masjidPhotoUrl: url } : null));
     } catch (err) {
       toast(err instanceof Error ? err.message : "Photo upload fail hua", "error");

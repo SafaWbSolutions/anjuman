@@ -1,0 +1,108 @@
+name: Apply SQL migration
+
+# Applies one migration file to the live Supabase database using the
+# existing SUPABASE_DB_URL secret. This replaces the old Management API
+# token flow (which stopped working after the PAT was revoked).
+#
+# Safety:
+#   - only runs on a manual dispatch, or when a migration file is pushed
+#   - skips itself when the secret is missing
+#   - ON_ERROR_STOP=1, so a partial migration is not silently ignored
+#
+# Usage: Actions → "Apply SQL migration" → Run workflow → file path.
+
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "Migration file path"
+        required: true
+        default: "supabase/migrations/0038_fix_dashboard_settled_at.sql"
+  push:
+    paths:
+      - "supabase/migrations/0038_fix_dashboard_settled_at.sql"
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for database URL secret
+        id: check
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SUPABASE_DB_URL secret is not set — skipping migration."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install PostgreSQL 17 client
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve IPv4 pooler connection
+        if: steps.check.outputs.ready == 'true'
+        env:
+          RAW_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          URL="$RAW_DB_URL"
+          if [[ "$URL" =~ ^postgresql://postgres:(.*)@db\.([a-z0-9]+)\.supabase\.co:5432/postgres$ ]]; then
+            PASS="${BASH_REMATCH[1]}"
+            REF="${BASH_REMATCH[2]}"
+            if [[ "$PASS" != *"%"* ]]; then
+              PASS=$(printf '%s' "$PASS" | sed -e 's/%/%25/g' -e 's/@/%40/g' -e 's/:/%3A/g' -e 's/#/%23/g' -e 's|/|%2F|g')
+            fi
+            URL="postgresql://postgres.${REF}:${PASS}@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require"
+          fi
+          echo "DB_URL_RUN=$URL" >> "$GITHUB_ENV"
+          echo "Using host: $(printf '%s' "$URL" | sed -E 's#.*@([^/?]+).*#\1#')"
+
+      - name: Apply migration
+        if: steps.check.outputs.ready == 'true'
+        env:
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0038_fix_dashboard_settled_at.sql' }}
+        run: |
+          set -euo pipefail
+          test -f "$FILE"
+          echo "Applying $FILE"
+          psql "$DB_URL_RUN" -v ON_ERROR_STOP=1 -f "$FILE"
+
+      - name: Verify dashboard function no longer uses settled_at
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          psql "$DB_URL_RUN" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          begin
+            if exists (
+              select 1
+              from pg_proc p
+              join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'public'
+                and p.proname = 'dashboard_snapshot'
+                and p.prosrc like '%settled_at%'
+            ) then
+              raise exception 'dashboard_snapshot still references settled_at';
+            end if;
+          end $$;
+          select 'dashboard_snapshot OK' as result;
+          SQL
+
+      - name: Summary
+        if: always()
+        run: echo "Migration workflow finished at $(date -u +%H:%M:%S) UTC" >> "$GITHUB_STEP_SUMMARY"

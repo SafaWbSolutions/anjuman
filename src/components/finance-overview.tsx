@@ -24,7 +24,7 @@ import {
   listPayments,
 } from "@/lib/repo";
 import { isDemoMode } from "@/lib/supabase";
-import { formatDate, formatINR, periodLabel, cn } from "@/lib/utils";
+import { formatDate, formatINR, periodLabel, cn, errorMessage } from "@/lib/utils";
 import { downloadCsv, downloadPdfTable } from "@/lib/export";
 import {
   Button,
@@ -98,7 +98,7 @@ export function FinanceOverview({
       setDonations(d);
       setFunds(f);
     } catch (e2) {
-      setError(e2 instanceof Error ? e2.message : "Analysis load nahi hua");
+      setError(errorMessage(e2, "Analysis load nahi hua"));
     } finally {
       setLoading(false);
     }

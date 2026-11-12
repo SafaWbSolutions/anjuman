@@ -5,6 +5,30 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Supabase `PostgrestError` is a plain object, not an `Error` instance.
+ * `e instanceof Error ? e.message : "..."` therefore hides the real
+ * reason (RLS denial, missing RPC, SQL exception, …). This helper keeps
+ * the actual message visible so a failure can be diagnosed from the UI.
+ */
+export function errorMessage(e: unknown, fallback = "Kuch galat ho gaya"): string {
+  if (typeof e === "string" && e.trim()) return e;
+  if (e && typeof e === "object") {
+    const o = e as Record<string, unknown>;
+    const parts = [o.message, o.details, o.hint, o.error_description, o.error]
+      .filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+    if (parts.length) return [...new Set(parts)].join(" · ");
+    if (e instanceof Error && e.message) return e.message;
+    try {
+      const s = JSON.stringify(e);
+      if (s && s !== "{}") return s;
+    } catch {
+      /* circular object */
+    }
+  }
+  return fallback;
+}
+
 /** Format paise (integer) as Indian rupees. Money is never stored as a float. */
 export function formatINR(paise: number, opts?: { compact?: boolean }) {
   const rupees = paise / 100;

@@ -52,7 +52,7 @@ import {
   type WorkItem,
   type WorkQueue,
 } from "@/lib/repo";
-import { formatINR, formatDate, periodLabel, cn } from "@/lib/utils";
+import { formatINR, formatDate, periodLabel, cn, errorMessage } from "@/lib/utils";
 import { activeTenant } from "@/lib/mock";
 import { ReceiptDrawer, receiptOf, type ReceiptInfo } from "@/components/receipt";
 import { FinanceOverview } from "@/components/finance-overview";
@@ -133,29 +133,53 @@ function OfficeDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [membersR, invoicesR, paymentsR, expensesR, approvalsR, complaintsR, fundsR, snapR, queueR] =
-        await Promise.all([
-          listMembers(),
-          listInvoices(),
-          listPayments(),
-          listExpenses(),
-          listApprovals(),
-          listComplaints(),
-          listFunds(),
-          getDashboard(),
-          getWorkQueue(),
-        ]);
-      setMembers(membersR);
-      setInvoices(invoicesR);
-      setPayments(paymentsR);
-      setExpenses(expensesR);
-      setApprovals(approvalsR);
-      setComplaints(complaintsR);
-      setFunds(fundsR);
-      setSnapshot(snapR);
-      setQueue(queueR);
+      // One failed section must not blank the whole dashboard. Load each
+      // section independently, render whatever succeeded, and name the
+      // exact failing call + real Supabase message in the banner.
+      const results = await Promise.allSettled([
+        listMembers(),
+        listInvoices(),
+        listPayments(),
+        listExpenses(),
+        listApprovals(),
+        listComplaints(),
+        listFunds(),
+        getDashboard(),
+        getWorkQueue(),
+      ]);
+
+      const failures: string[] = [];
+      const take = <T,>(index: number, label: string): T | null => {
+        const r = results[index];
+        if (r.status === "fulfilled") return r.value as T;
+        console.error(`[dashboard] ${label} failed`, r.reason);
+        failures.push(`${label}: ${errorMessage(r.reason, "load failed")}`);
+        return null;
+      };
+
+      const membersR = take<Member[]>(0, "Members");
+      const invoicesR = take<Invoice[]>(1, "Invoices");
+      const paymentsR = take<Payment[]>(2, "Payments");
+      const expensesR = take<Expense[]>(3, "Expenses");
+      const approvalsR = take<Approval[]>(4, "Approvals");
+      const complaintsR = take<Complaint[]>(5, "Complaints");
+      const fundsR = take<Fund[]>(6, "Funds");
+      const snapR = take<Awaited<ReturnType<typeof getDashboard>>>(7, "Dashboard summary");
+      const queueR = take<WorkQueue>(8, "Work queue");
+
+      if (membersR) setMembers(membersR);
+      if (invoicesR) setInvoices(invoicesR);
+      if (paymentsR) setPayments(paymentsR);
+      if (expensesR) setExpenses(expensesR);
+      if (approvalsR) setApprovals(approvalsR);
+      if (complaintsR) setComplaints(complaintsR);
+      if (fundsR) setFunds(fundsR);
+      if (snapR) setSnapshot(snapR);
+      if (queueR) setQueue(queueR);
+
+      if (failures.length) setError(failures.join(" · "));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Dashboard load nahi ho saka");
+      setError(errorMessage(e, "Dashboard load nahi ho saka"));
     } finally {
       setLoading(false);
     }

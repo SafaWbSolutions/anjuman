@@ -20,6 +20,7 @@ import { useAuth } from "@/lib/auth";
 import { ROLE_LABEL, type Role } from "@/lib/types";
 import { Button, Input } from "@/components/ui";
 import { MadeBy } from "@/components/brand";
+import { RegistrationRequestForm } from "@/components/registration-request-form";
 import { sendPublicSupportMessage } from "@/lib/repo";
 import { cn } from "@/lib/utils";
 
@@ -76,6 +77,7 @@ export default function LoginPage() {
   const [helpName, setHelpName] = useState("");
   const [helpMessage, setHelpMessage] = useState("");
   const [helpBusy, setHelpBusy] = useState(false);
+  const [registerOpen, setRegisterOpen] = useState(false);
 
   /** Show the real reason — Supabase errors are not always Error objects. */
   function msgOf(e: unknown, fallback: string) {
@@ -645,6 +647,30 @@ export default function LoginPage() {
             <Lock className="h-3 w-3" />
             <span>Your data is isolated per anjuman. We never share it.</span>
           </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setRegisterOpen(true);
+              setError(null);
+              setNotice(null);
+            }}
+            className="mt-4 flex w-full items-center gap-3 rounded-2xl border border-brand-200 bg-brand-50/70 p-3.5 text-left transition hover:border-brand-300 hover:bg-brand-50"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white">
+              <Building2 className="h-4.5 w-4.5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-semibold text-brand-900">
+                Anjuman registration request
+              </span>
+              <span className="block text-[11.5px] text-brand-700">
+                Naya anjuman add karwana hai? Yahan details bhejein.
+              </span>
+            </span>
+            <ArrowRight className="h-4 w-4 shrink-0 text-brand-600" />
+          </button>
+
           <button
             type="button"
             onClick={() => {
@@ -659,6 +685,11 @@ export default function LoginPage() {
           <MadeBy tone="light" className="mt-4" />
         </div>
       </div>
+
+      <RegistrationRequestForm
+        open={registerOpen}
+        onClose={() => setRegisterOpen(false)}
+      />
     </div>
   );
 }

@@ -43,6 +43,14 @@ export interface Tenant {
   phone: string;
   email?: string;
   upiId: string;
+  upiQrUrl?: string;
+  upiEnabled: boolean;
+  autoVerifyUpi: boolean;
+  bankName?: string;
+  bankAccountName?: string;
+  bankAccountNo?: string;
+  bankIfsc?: string;
+  bankBranch?: string;
   address?: string;
   logoUrl?: string;
   themeColor?: string;
@@ -59,6 +67,36 @@ export interface Tenant {
   timezone?: string;
   /** Feature flags for this anjuman. */
   features?: Record<string, boolean>;
+}
+
+export type RegistrationStatus = "pending" | "approved" | "rejected";
+
+export interface RegistrationRequest {
+  id: string;
+  anjumanName: string;
+  address: string;
+  district?: string;
+  state?: string;
+  pincode?: string;
+  totalMembers?: number;
+  isRegistered: boolean;
+  regNo?: string;
+  sadarName: string;
+  sadarPhone: string;
+  sadarEmail?: string;
+  sadarKycUrl?: string;
+  khajanchiName?: string;
+  khajanchiPhone?: string;
+  khajanchiEmail?: string;
+  khajanchiKycUrl?: string;
+  proofUrl?: string;
+  contactEmail?: string;
+  note?: string;
+  status: RegistrationStatus;
+  decisionNote?: string;
+  decidedBy?: string;
+  decidedAt?: string;
+  createdAt: string;
 }
 
 export type MemberType = "member" | "donor" | "imam" | "muazzin" | "staff";

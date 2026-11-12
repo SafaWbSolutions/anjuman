@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
   CreditCard,
@@ -14,10 +14,12 @@ import {
   QrCode,
   ShieldCheck,
   Smartphone,
+  Trash2,
+  Upload,
   Zap,
 } from "lucide-react";
 import type { Integration, Tenant } from "@/lib/types";
-import { getCurrentTenant, listIntegrations, saveIntegrationSecret, testIntegration, saveTenantSettings, saveTenantProfile } from "@/lib/repo";
+import { getCurrentTenant, listIntegrations, saveIntegrationSecret, testIntegration, saveTenantSettings, saveTenantProfile, uploadPaymentQr } from "@/lib/repo";
 import {
   Badge,
   Button,
@@ -30,7 +32,6 @@ import {
   Switch,
   toast,
 } from "@/components/ui";
-import { cn } from "@/lib/utils";
 
 type Provider = "razorpay" | "cashfree" | "phonepe";
 
@@ -76,6 +77,8 @@ export default function PaymentsSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [qrUploading, setQrUploading] = useState(false);
+  const qrInputRef = useRef<HTMLInputElement>(null);
 
   // Gateway local state
   const [gw, setGw] = useState<Record<Provider, GatewayState>>({
@@ -117,8 +120,8 @@ export default function PaymentsSettingsPage() {
         }
 
         if (t) {
-          setUpiEnabled(Boolean(t.upiId));
-          setAutoVerify(true); // could be loaded from tenant_settings
+          setUpiEnabled(t.upiEnabled);
+          setAutoVerify(t.autoVerifyUpi);
         }
 
         setGw(nextGw);
@@ -188,6 +191,29 @@ export default function PaymentsSettingsPage() {
     toast(newEnabled ? `${PROVIDER_LABEL[p]} enabled` : `${PROVIDER_LABEL[p]} disabled`);
   }
 
+  async function onQrFile(file: File | null) {
+    if (!file || !tenant) return;
+    if (!file.type.startsWith("image/")) {
+      toast("Sirf image (PNG/JPG) upload karein", "error");
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      toast("Image 4 MB se chhoti honi chahiye", "error");
+      return;
+    }
+    setQrUploading(true);
+    try {
+      const url = await uploadPaymentQr(file, tenant.id);
+      setTenant({ ...tenant, upiQrUrl: url });
+      toast("QR image uploaded · ab Save dabayein");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "QR upload failed", "error");
+    } finally {
+      setQrUploading(false);
+      if (qrInputRef.current) qrInputRef.current.value = "";
+    }
+  }
+
   async function saveAll() {
     if (!tenant) return;
     setSaving(true);
@@ -196,6 +222,14 @@ export default function PaymentsSettingsPage() {
       await Promise.all([
         saveTenantProfile({
           upiId: tenant.upiId,
+          upiQrUrl: tenant.upiQrUrl ?? null,
+          upiEnabled,
+          autoVerifyUpi: autoVerify,
+          bankName: tenant.bankName ?? "",
+          bankAccountName: tenant.bankAccountName ?? "",
+          bankAccountNo: tenant.bankAccountNo ?? "",
+          bankIfsc: tenant.bankIfsc ?? "",
+          bankBranch: tenant.bankBranch ?? "",
         }),
         saveTenantSettings({ autoVerifyGateway: autoVerify }),
       ]);
@@ -330,23 +364,57 @@ export default function PaymentsSettingsPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col items-center justify-center rounded-xl border border-ink-100 bg-white p-3">
-                <div className="grid h-[132px] w-[132px] grid-cols-7 grid-rows-7 gap-[2px]">
-                  {Array.from({ length: 49 }).map((_, i) => {
-                    const on = (i * 7 + 3) % 5 < 2 || i % 11 === 0 || i < 7;
-                    return (
-                      <span
-                        key={i}
-                        className={cn("rounded-[1px]", on ? "bg-ink-900" : "bg-transparent")}
-                      />
-                    );
-                  })}
+              <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-ink-200 bg-white p-3">
+                {t.upiQrUrl ? (
+                  <img
+                    src={t.upiQrUrl}
+                    alt="Anjuman UPI QR code"
+                    className="h-[148px] w-[148px] rounded-lg object-contain"
+                  />
+                ) : (
+                  <div className="flex h-[148px] w-[148px] flex-col items-center justify-center gap-1.5 rounded-lg bg-ink-50 text-ink-400">
+                    <QrCode className="h-9 w-9" />
+                    <span className="text-[10.5px] font-medium">No QR uploaded</span>
+                  </div>
+                )}
+
+                <input
+                  ref={qrInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={(e) => void onQrFile(e.target.files?.[0] ?? null)}
+                />
+
+                <div className="flex w-full items-center justify-center gap-1.5">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={qrUploading}
+                    onClick={() => qrInputRef.current?.click()}
+                    className="flex-1"
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    {t.upiQrUrl ? "Replace" : "Upload QR"}
+                  </Button>
+                  {t.upiQrUrl && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setTenant({ ...t, upiQrUrl: undefined })}
+                      title="Remove QR image"
+                      className="h-8 w-8 text-red-500 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
-                <p className="mt-2 text-center font-mono text-[10px] text-ink-500">
+
+                <p className="text-center font-mono text-[10px] text-ink-500">
                   {t.upiId || "anjuman@upi"}
                 </p>
-                <Badge tone="green" className="mt-1">
-                  Live QR
+                <Badge tone={t.upiQrUrl ? "green" : "slate"} dot>
+                  {t.upiQrUrl ? "QR ready" : "Upload pending"}
                 </Badge>
               </div>
             </div>
@@ -484,24 +552,63 @@ export default function PaymentsSettingsPage() {
           </Card>
 
           <Card>
-            <CardHeader title="Connected account" subtitle="Used for Mode B settlement" />
-            <div className="p-5">
-              <div className="rounded-xl border border-ink-100 bg-ink-50/60 p-3.5">
-                <p className="text-[11px] uppercase tracking-wide text-ink-400">Bank</p>
-                <p className="mt-0.5 text-[12.5px] font-medium text-ink-800">
-                  State Bank of India
-                </p>
-                <p className="font-mono text-[11.5px] text-ink-500">
-                  •••• •••• 4412 · IFSC SBIN0001234
-                </p>
-                <Badge tone="green" className="mt-2" dot>
-                  Verified
-                </Badge>
+            <CardHeader title="Anjuman bank account" subtitle="Members can pay by transfer · shown on receipts" />
+            <div className="space-y-3 p-5">
+              <Field label="Bank name">
+                <Input
+                  value={t.bankName ?? ""}
+                  onChange={(e) => setTenant({ ...t, bankName: e.target.value })}
+                  placeholder="State Bank of India"
+                />
+              </Field>
+              <Field label="Account holder name">
+                <Input
+                  value={t.bankAccountName ?? ""}
+                  onChange={(e) => setTenant({ ...t, bankAccountName: e.target.value })}
+                  placeholder="Anjuman ka naam"
+                />
+              </Field>
+              <Field label="Account number">
+                <Input
+                  value={t.bankAccountNo ?? ""}
+                  onChange={(e) => setTenant({ ...t, bankAccountNo: e.target.value })}
+                  placeholder="00000000000"
+                  className="font-mono"
+                />
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="IFSC">
+                  <Input
+                    value={t.bankIfsc ?? ""}
+                    onChange={(e) => setTenant({ ...t, bankIfsc: e.target.value.toUpperCase() })}
+                    placeholder="SBIN0001234"
+                    className="font-mono uppercase"
+                  />
+                </Field>
+                <Field label="Branch">
+                  <Input
+                    value={t.bankBranch ?? ""}
+                    onChange={(e) => setTenant({ ...t, bankBranch: e.target.value })}
+                    placeholder="Branch name"
+                  />
+                </Field>
               </div>
-              <p className="mt-3 text-[11px] leading-relaxed text-ink-500">
-                Changing the bank account requires sadar approval and a 7-day cooling
-                period. This is the strongest protection against payment redirection
-                fraud.
+              {t.bankAccountNo && (
+                <div className="rounded-xl border border-ink-100 bg-ink-50/60 p-3.5">
+                  <p className="text-[11px] uppercase tracking-wide text-ink-400">Saved account</p>
+                  <p className="mt-0.5 text-[12.5px] font-medium text-ink-800">
+                    {t.bankName || "Bank"} · {t.bankAccountName || t.name}
+                  </p>
+                  <p className="font-mono text-[11.5px] text-ink-500">
+                    •••• {t.bankAccountNo.slice(-4)}
+                    {t.bankIfsc ? ` · IFSC ${t.bankIfsc}` : ""}
+                  </p>
+                </div>
+              )}
+              <p className="text-[11px] leading-relaxed text-ink-500">
+                Ye details sirf receipt aur member portal par dikhti hain. Paisa seedha
+                isi account me aata hai — platform kabhi hold nahi karta. Save karne ke
+                liye neeche <strong>Save settings</strong> dabayein.
               </p>
             </div>
           </Card>

@@ -387,16 +387,11 @@ export function Switch({
     >
       <span
         className={cn(
-          "relative h-6 w-11 rounded-full transition-colors",
-          checked ? "bg-brand-600" : "bg-ink-300"
+          "flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors",
+          checked ? "justify-end bg-brand-600" : "justify-start bg-ink-300"
         )}
       >
-        <span
-          className={cn(
-            "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
-            checked ? "translate-x-[22px]" : "translate-x-0.5"
-          )}
-        />
+        <span className="h-5 w-5 rounded-full bg-white shadow-sm ring-1 ring-black/5 transition-all" />
       </span>
       {label && <span className="text-sm text-ink-700">{label}</span>}
     </button>

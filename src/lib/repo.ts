@@ -48,6 +48,7 @@ import type {
   PlanType,
   PrayerDay,
   Role,
+  RegistrationRequest,
   Tenant,
   TenantStatus,
 } from "./types";
@@ -126,7 +127,19 @@ function toTenant(r: Row): Tenant {
     masjid: r.masjid ?? "",
     regNo: r.reg_no ?? "",
     phone: r.phone ?? "",
+    email: r.email ?? "",
     upiId: r.upi_id ?? "",
+    upiQrUrl: r.upi_qr_url ?? undefined,
+    upiEnabled: Boolean(r.upi_enabled),
+    autoVerifyUpi: Boolean(r.auto_verify_upi),
+    bankName: r.bank_name ?? undefined,
+    bankAccountName: r.bank_account_name ?? undefined,
+    bankAccountNo: r.bank_account_no ?? undefined,
+    bankIfsc: r.bank_ifsc ?? undefined,
+    bankBranch: r.bank_branch ?? undefined,
+    address: r.address ?? undefined,
+    logoUrl: r.logo_url ?? undefined,
+    themeColor: r.theme_color ?? undefined,
     status: r.status,
     planType: r.plan_type,
     planAmountPaise: num(r.plan_amount_paise),
@@ -753,6 +766,14 @@ export interface TenantProfilePatch {
   email?: string;
   regNo?: string;
   upiId?: string;
+  upiQrUrl?: string | null;
+  upiEnabled?: boolean;
+  autoVerifyUpi?: boolean;
+  bankName?: string;
+  bankAccountName?: string;
+  bankAccountNo?: string;
+  bankIfsc?: string;
+  bankBranch?: string;
   address?: string;
   logoUrl?: string;
   themeColor?: string;
@@ -777,6 +798,14 @@ export async function saveTenantProfile(patch: TenantProfilePatch): Promise<void
   if (patch.email !== undefined) row.email = patch.email;
   if (patch.regNo !== undefined) row.reg_no = patch.regNo;
   if (patch.upiId !== undefined) row.upi_id = patch.upiId;
+  if (patch.upiQrUrl !== undefined) row.upi_qr_url = patch.upiQrUrl;
+  if (patch.upiEnabled !== undefined) row.upi_enabled = patch.upiEnabled;
+  if (patch.autoVerifyUpi !== undefined) row.auto_verify_upi = patch.autoVerifyUpi;
+  if (patch.bankName !== undefined) row.bank_name = patch.bankName;
+  if (patch.bankAccountName !== undefined) row.bank_account_name = patch.bankAccountName;
+  if (patch.bankAccountNo !== undefined) row.bank_account_no = patch.bankAccountNo;
+  if (patch.bankIfsc !== undefined) row.bank_ifsc = patch.bankIfsc;
+  if (patch.bankBranch !== undefined) row.bank_branch = patch.bankBranch;
   if (patch.address !== undefined) row.address = patch.address;
   if (patch.logoUrl !== undefined) row.logo_url = patch.logoUrl;
   if (patch.themeColor !== undefined) row.theme_color = patch.themeColor;
@@ -812,6 +841,14 @@ export async function saveTenantProfileForTenant(
   if (patch.email !== undefined) row.email = patch.email;
   if (patch.regNo !== undefined) row.reg_no = patch.regNo;
   if (patch.upiId !== undefined) row.upi_id = patch.upiId;
+  if (patch.upiQrUrl !== undefined) row.upi_qr_url = patch.upiQrUrl;
+  if (patch.upiEnabled !== undefined) row.upi_enabled = patch.upiEnabled;
+  if (patch.autoVerifyUpi !== undefined) row.auto_verify_upi = patch.autoVerifyUpi;
+  if (patch.bankName !== undefined) row.bank_name = patch.bankName;
+  if (patch.bankAccountName !== undefined) row.bank_account_name = patch.bankAccountName;
+  if (patch.bankAccountNo !== undefined) row.bank_account_no = patch.bankAccountNo;
+  if (patch.bankIfsc !== undefined) row.bank_ifsc = patch.bankIfsc;
+  if (patch.bankBranch !== undefined) row.bank_branch = patch.bankBranch;
   if (patch.address !== undefined) row.address = patch.address;
   if (patch.logoUrl !== undefined) row.logo_url = patch.logoUrl;
   if (patch.themeColor !== undefined) row.theme_color = patch.themeColor;
@@ -2155,6 +2192,173 @@ export async function uploadAvatar(file: File, userId: string): Promise<string> 
   if (error) throw error;
 
   return client().storage.from("avatars").getPublicUrl(path).data.publicUrl;
+}
+
+/** Upload the anjuman's own UPI QR image; returns its public URL. */
+export async function uploadPaymentQr(file: File, tenantId: string): Promise<string> {
+  if (isDemoMode) return "";
+
+  const ext =
+    (file.name.split(".").pop() ?? "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
+  const path = `qr/${tenantId}/upi-qr-${Date.now()}.${ext}`;
+  const { error } = await client()
+    .storage.from("avatars")
+    .upload(path, file, {
+      cacheControl: "3600",
+      upsert: true,
+      contentType: file.type || "image/png",
+    });
+  if (error) throw error;
+
+  return client().storage.from("avatars").getPublicUrl(path).data.publicUrl;
+}
+
+/* ── Registration requests ──────────────────────────────────── */
+
+export interface RegistrationRequestInput {
+  anjumanName: string;
+  address: string;
+  district?: string;
+  state?: string;
+  pincode?: string;
+  totalMembers?: number;
+  isRegistered: boolean;
+  regNo?: string;
+  sadarName: string;
+  sadarPhone: string;
+  sadarEmail?: string;
+  sadarKycUrl?: string;
+  khajanchiName?: string;
+  khajanchiPhone?: string;
+  khajanchiEmail?: string;
+  khajanchiKycUrl?: string;
+  proofUrl?: string;
+  contactEmail?: string;
+  note?: string;
+}
+
+function toRegistrationRequest(r: Row): RegistrationRequest {
+  return {
+    id: r.id,
+    anjumanName: r.anjuman_name,
+    address: r.address,
+    district: r.district ?? undefined,
+    state: r.state ?? undefined,
+    pincode: r.pincode ?? undefined,
+    totalMembers: r.total_members ?? undefined,
+    isRegistered: Boolean(r.is_registered),
+    regNo: r.reg_no ?? undefined,
+    sadarName: r.sadar_name,
+    sadarPhone: r.sadar_phone,
+    sadarEmail: r.sadar_email ?? undefined,
+    sadarKycUrl: r.sadar_kyc_url ?? undefined,
+    khajanchiName: r.khajanchi_name ?? undefined,
+    khajanchiPhone: r.khajanchi_phone ?? undefined,
+    khajanchiEmail: r.khajanchi_email ?? undefined,
+    khajanchiKycUrl: r.khajanchi_kyc_url ?? undefined,
+    proofUrl: r.proof_url ?? undefined,
+    contactEmail: r.contact_email ?? undefined,
+    note: r.note ?? undefined,
+    status: r.status,
+    decisionNote: r.decision_note ?? undefined,
+    decidedBy: r.decided_by ?? undefined,
+    decidedAt: r.decided_at ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+/** Upload a KYC / proof document to the private registration-docs bucket. */
+export async function uploadRegistrationDoc(
+  file: File,
+  label: "sadar-kyc" | "khajanchi-kyc" | "proof",
+  token: string
+): Promise<string> {
+  if (isDemoMode) return "";
+
+  const ext =
+    (file.name.split(".").pop() ?? "pdf").toLowerCase().replace(/[^a-z0-9]/g, "") || "pdf";
+  const path = `requests/${token}/${label}-${Date.now()}.${ext}`;
+  const { error } = await client()
+    .storage.from("registration-docs")
+    .upload(path, file, {
+      upsert: false,
+      contentType: file.type || "application/octet-stream",
+    });
+  if (error) throw error;
+
+  return path;
+}
+
+/** Public (anon) submission from the login page. */
+export async function submitRegistrationRequest(
+  input: RegistrationRequestInput
+): Promise<string> {
+  if (isDemoMode) return "demo";
+
+  const { data, error } = await client().rpc("submit_registration_request", {
+    p_data: {
+      anjuman_name: input.anjumanName,
+      address: input.address,
+      district: input.district ?? null,
+      state: input.state ?? null,
+      pincode: input.pincode ?? null,
+      total_members: input.totalMembers ?? null,
+      is_registered: input.isRegistered,
+      reg_no: input.regNo ?? null,
+      sadar_name: input.sadarName,
+      sadar_phone: input.sadarPhone,
+      sadar_email: input.sadarEmail ?? null,
+      sadar_kyc_url: input.sadarKycUrl ?? null,
+      khajanchi_name: input.khajanchiName ?? null,
+      khajanchi_phone: input.khajanchiPhone ?? null,
+      khajanchi_email: input.khajanchiEmail ?? null,
+      khajanchi_kyc_url: input.khajanchiKycUrl ?? null,
+      proof_url: input.proofUrl ?? null,
+      contact_email: input.contactEmail ?? null,
+      note: input.note ?? null,
+    },
+  });
+  if (error) throw error;
+  return String(data);
+}
+
+/** Super admin only. */
+export async function listRegistrationRequests(): Promise<RegistrationRequest[]> {
+  if (isDemoMode) return [];
+
+  const { data, error } = await client().rpc("list_registration_requests");
+  if (error) throw error;
+  return ((data ?? []) as Row[]).map(toRegistrationRequest);
+}
+
+/** Super admin only. */
+export async function decideRegistrationRequest(
+  id: string,
+  status: "pending" | "approved" | "rejected",
+  note?: string
+): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client().rpc("decide_registration_request", {
+    p_id: id,
+    p_status: status,
+    p_note: note ?? null,
+  });
+  if (error) throw error;
+}
+
+/** Signed URL for a private registration document (super admin). */
+export async function getRegistrationDocUrl(
+  path: string,
+  expiresIn = 3600
+): Promise<string | null> {
+  if (isDemoMode || !path) return null;
+
+  const { data, error } = await client()
+    .storage.from("registration-docs")
+    .createSignedUrl(path, expiresIn);
+  if (error) return null;
+  return data?.signedUrl ?? null;
 }
 
 export interface MemberDetailsPatch {

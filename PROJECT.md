@@ -216,7 +216,7 @@ lekin uske andar sab pages `AppShell` (sidebar/header) use karte hain.
 | `/notifications/` | `(app)/notifications/page.tsx` | all | member notifications (payment/due/notice/approval) |
 | `/approvals/` | `(app)/approvals/page.tsx` | sadar, khajanchi, auditor | single maker-checker queue |
 | `/members/` | `(app)/members/page.tsx` | office + collector + super_admin | member list, add/edit, dues range, advance, remove, login create, payment edit/reset |
-| `/households/` | `(app)/households/page.tsx` | office | household grouping & dues rollup |
+| `/households/` | `(app)/households/page.tsx` | office | household grouping & dues rollup (active members only; archived excluded) |
 | `/id-cards/` | `(app)/id-cards/page.tsx` | sadar, secretary, super_admin (member: own) | ID card view/print/bulk PDF/PNG/WhatsApp |
 | `/namaz/` | `(app)/namaz/page.tsx` | office + member | prayer timetable, calculation, manual override |
 | `/notices/` | `(app)/notices/page.tsx` | all | notices create/broadcast |
@@ -838,6 +838,8 @@ har table par role-level nahi. Iska matlab:
 - Members page ka default filter **Active** hai, isliye archive hua member list se
   turant hat jata hai. Use dekhne ke liye status filter me **Inactive / archived**
   chunein.
+- Archived member **Households**, outstanding, dues ageing aur dashboard ke
+  defaulters se bhi nahi ginte — sirf receipts/ledger history me rehta hai.
 - `restore_member()` (0039) archived member ko wapas **active** karta hai
   (Sadar / platform admin). Login dobara nahi khulta — uske liye **Create login**
   use karein; `admin-create-user` wahi auth account reuse karta hai.

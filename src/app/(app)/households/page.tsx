@@ -51,9 +51,17 @@ export default function HouseholdsPage() {
     };
   }, []);
 
+  // Archived members (removed but kept for the ledger) must not show up as
+  // households or as due. The DB already excludes them from outstanding
+  // (0030/0038), so the UI has to do the same.
+  const activeMembers = useMemo(
+    () => members.filter((m) => m.status === "active"),
+    [members]
+  );
+
   const households = useMemo<Household[]>(() => {
     const map = new Map<string, Household>();
-    members.forEach((m) => {
+    activeMembers.forEach((m) => {
       const key = `${m.mohalla}#${m.household}`;
       if (!map.has(key)) {
         map.set(key, {
@@ -79,7 +87,7 @@ export default function HouseholdsPage() {
     return [...map.values()].sort((a, b) =>
       `${a.mohalla}${a.number}`.localeCompare(`${b.mohalla}${b.number}`)
     );
-  }, [members, invoices]);
+  }, [activeMembers, invoices]);
 
   const filtered = useMemo(
     () =>
@@ -114,7 +122,7 @@ export default function HouseholdsPage() {
       <PageHeader
         eyebrow="Community"
         title="Households"
-        description="Group members by house to see one family's combined dues and payment behaviour."
+        description="Group active members by house to see one family's combined dues and payment behaviour. Archived members are not counted."
       />
 
       {error && (
@@ -129,7 +137,7 @@ export default function HouseholdsPage() {
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Households" value={String(households.length)} icon={Home} tone="brand" />
-        <StatCard label="Members covered" value={String(members.length)} icon={Users} tone="blue" />
+        <StatCard label="Members covered" value={String(activeMembers.length)} icon={Users} tone="blue" />
         <StatCard label="Total billed" value={formatINR(totalBilled)} icon={Wallet} tone="slate" />
         <StatCard
           label="Collection rate"

@@ -2240,6 +2240,82 @@ export async function removeMember(
   return String(data) === "ARCHIVED" ? "ARCHIVED" : "DELETED";
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Member notifications
+// ═══════════════════════════════════════════════════════════════
+
+export interface MemberNotification {
+  id: string;
+  tenantId: string;
+  memberId?: string;
+  kind: "payment" | "due" | "notice" | "approval" | "info";
+  title: string;
+  body?: string;
+  readAt?: string;
+  createdAt: string;
+}
+
+function toNotification(r: Row): MemberNotification {
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    memberId: r.member_id ?? undefined,
+    kind: r.kind,
+    title: r.title,
+    body: r.body ?? undefined,
+    readAt: r.read_at ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+/** Inbox rows: a member sees only their own; office sees the tenant feed. */
+export async function listMyNotifications(limit = 100): Promise<MemberNotification[]> {
+  if (isDemoMode) return [];
+
+  const { data, error } = await client()
+    .from("member_notifications")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map(toNotification);
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  if (isDemoMode) return;
+  const { error } = await client().rpc("mark_notification_read", { p_id: id });
+  if (error) throw error;
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  if (isDemoMode) return;
+  const { error } = await client().rpc("mark_all_notifications_read");
+  if (error) throw error;
+}
+
+/** Ask for a wrong payment amount to be corrected (other role approves). */
+export async function requestPaymentEdit(input: {
+  paymentId: string;
+  amountPaise: number;
+  method: Payment["method"];
+  reference?: string;
+  note?: string;
+  reason?: string;
+}): Promise<string> {
+  if (isDemoMode) return `demo-edit-${Date.now()}`;
+
+  const { data, error } = await client().rpc("request_payment_edit", {
+    p_payment: input.paymentId,
+    p_amount: input.amountPaise,
+    p_method: input.method,
+    p_reference: input.reference ?? null,
+    p_note: input.note ?? null,
+    p_reason: input.reason ?? null,
+  });
+  if (error) throw error;
+  return String(data);
+}
+
 /** Sadar asks the Khajanchi to reset one member's payments. */
 export async function requestPaymentReset(
   memberId: string,

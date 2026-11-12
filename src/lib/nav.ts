@@ -29,6 +29,7 @@ export const NAV: NavSection[] = [
     title: "Overview",
     items: [
       { label: "Dashboard", href: "/dashboard/", icon: "LayoutDashboard", roles: ALL },
+      { label: "Notifications", href: "/notifications/", icon: "BellRing", roles: ALL },
       { label: "Approvals", href: "/approvals/", icon: "ShieldCheck", roles: ["sadar", "khajanchi", "auditor"] },
     ],
   },
@@ -62,7 +63,7 @@ export const NAV: NavSection[] = [
       { label: "My Profile", href: "/profile/", icon: "UserRound", roles: ALL },
       { label: "Anjuman Profile", href: "/settings/anjuman/", icon: "Building2", roles: ["sadar", "secretary"] },
       { label: "Payments", href: "/settings/payments/", icon: "CreditCard", roles: ["sadar", "khajanchi"] },
-      { label: "Notifications", href: "/settings/notifications/", icon: "BellRing", roles: ["sadar", "secretary"] },
+      { label: "Alert Channels", href: "/settings/notifications/", icon: "BellRing", roles: ["sadar", "secretary"] },
       { label: "Roles & Access", href: "/settings/roles/", icon: "KeyRound", roles: ["sadar", "secretary"] },
     ],
   },

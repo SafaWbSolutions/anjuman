@@ -36,6 +36,7 @@ import {
   listPayments,
   removeMember,
   requestFeeChange,
+  requestPaymentEdit,
   requestPaymentReset,
   saveMemberDetails,
   uploadAvatar,
@@ -92,6 +93,7 @@ export default function MembersPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [loginMember, setLoginMember] = useState<Member | null>(null);
   const [editMember, setEditMember] = useState<Member | null>(null);
+  const [editPayment, setEditPayment] = useState<Payment | null>(null);
 
   const [members, setMembers] = useState<Member[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -446,6 +448,12 @@ export default function MembersPage() {
             toast(errorText(e, "Reset request fail"), "error");
           }
         }}
+        onEditPayment={(p) => setEditPayment(p)}
+      />
+      <PaymentEditDrawer
+        payment={editPayment}
+        member={members.find((m) => m.id === editPayment?.memberId) ?? null}
+        onClose={() => setEditPayment(null)}
       />
       <CreateLoginDrawer member={loginMember} onClose={() => setLoginMember(null)} />
       <EditMemberDrawer
@@ -581,6 +589,7 @@ function MemberDrawer({
   onEdit,
   onRemove,
   onRequestReset,
+  onEditPayment,
 }: {
   member: Member | null;
   invoices: Invoice[];
@@ -592,6 +601,7 @@ function MemberDrawer({
   onEdit: (member: Member) => void;
   onRemove: (member: Member) => Promise<void>;
   onRequestReset: (member: Member, reason: string) => Promise<void>;
+  onEditPayment: (payment: Payment) => void;
 }) {
   const { user } = useAuth();
   const [receipt, setReceipt] = useState<ReceiptInfo | null>(null);
@@ -613,6 +623,11 @@ function MemberDrawer({
     .reduce((s, i) => s + i.paidPaise, 0);
   const dueTotal = dues.reduce((s, i) => s + (i.amountPaise - i.paidPaise), 0);
   const canRemove = user?.role === "sadar" || user?.role === "super_admin";
+  const canEditPayment =
+    user?.role === "sadar" ||
+    user?.role === "secretary" ||
+    user?.role === "khajanchi" ||
+    user?.role === "super_admin";
   const activePaymentCount = payments.filter(
     (p) =>
       p.memberId === member.id &&
@@ -878,6 +893,15 @@ function MemberDrawer({
                       title="Download / share receipt"
                     >
                       <Download className="h-3.5 w-3.5" /> Slip
+                    </button>
+                  )}
+                  {canEditPayment && (
+                    <button
+                      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-medium text-amber-700 hover:bg-amber-50"
+                      onClick={() => onEditPayment(p)}
+                      title="Amount / method galat ho to correction bhejo"
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Edit
                     </button>
                   )}
                 </div>
@@ -1332,6 +1356,142 @@ function AddMemberDrawer({
         generates an ID like{" "}
         <span className="font-mono">BHR-000031-9</span>, then creates invoices
         for the current month. Dues and reminders run automatically from here.
+      </div>
+    </Drawer>
+  );
+}
+
+/* ── Payment correction (maker-checker) ──────────────────────── */
+
+function PaymentEditDrawer({
+  payment,
+  member,
+  onClose,
+}: {
+  payment: Payment | null;
+  member: Member | null;
+  onClose: () => void;
+}) {
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState<Payment["method"]>("cash");
+  const [reference, setReference] = useState("");
+  const [note, setNote] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!payment) return;
+    setAmount(String(payment.amountPaise / 100));
+    setMethod(payment.method);
+    setReference(payment.reference ?? "");
+    setNote(payment.note ?? "");
+    setReason("");
+  }, [payment]);
+
+  if (!payment) return null;
+
+  const paise = Math.round((Number(amount) || 0) * 100);
+
+  async function submit() {
+    if (!payment) return;
+    if (paise <= 0) {
+      toast("Sahi amount daalo", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      await requestPaymentEdit({
+        paymentId: payment.id,
+        amountPaise: paise,
+        method,
+        reference,
+        note,
+        reason,
+      });
+      toast("Correction approval ke liye bhej di — doosra role approve karega");
+      onClose();
+    } catch (e) {
+      toast(errorText(e, "Correction request fail"), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Drawer
+      open={!!payment}
+      onClose={onClose}
+      title="Payment correction"
+      subtitle={`${payment.receiptNo || "Pending entry"} · ${member?.name ?? ""}`}
+      width="max-w-lg"
+      footer={
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11.5px] text-ink-500">
+            Abhi amount: {formatINR(payment.amountPaise)}
+          </p>
+          <Button loading={busy} onClick={submit}>
+            <Save className="h-4 w-4" /> Send for approval
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-[12px] leading-relaxed text-amber-900">
+          Entry turant nahi badlegi. <b>Khajanchi</b> ki entry ko Sadar /
+          Secretary approve karega, aur Sadar / Secretary ki entry ko{" "}
+          <b>Khajanchi</b>. Approve hone par ledger me adjustment entry jayegi
+          aur member ko notification jayegi.
+        </div>
+
+        <Field label="Sahi amount (₹)">
+          <Input
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            inputMode="decimal"
+            placeholder="400"
+          />
+        </Field>
+
+        <Field label="Method">
+          <Select
+            value={method}
+            onChange={(e) => setMethod(e.target.value as Payment["method"])}
+          >
+            <option value="cash">Cash</option>
+            <option value="upi">UPI</option>
+            <option value="gateway">Gateway</option>
+            <option value="cheque">Cheque</option>
+            <option value="adjustment">Adjustment</option>
+          </Select>
+        </Field>
+
+        <Field label="Reference / UTR">
+          <Input
+            value={reference}
+            onChange={(e) => setReference(e.target.value)}
+            placeholder="UPI ref, cheque no..."
+          />
+        </Field>
+
+        <Field label="Note">
+          <Input value={note} onChange={(e) => setNote(e.target.value)} />
+        </Field>
+
+        <Field label="Correction ki wajah" hint="Approver ko dikhegi">
+          <Input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. ₹500 mila tha, galti se ₹400 add hua"
+          />
+        </Field>
+
+        {paise > 0 && paise !== payment.amountPaise && (
+          <p className="rounded-xl bg-ink-50 px-3.5 py-2.5 text-[12.5px] text-ink-700">
+            {formatINR(payment.amountPaise)} → <b>{formatINR(paise)}</b> (
+            {paise > payment.amountPaise ? "+" : "−"}
+            {formatINR(Math.abs(paise - payment.amountPaise))})
+          </p>
+        )}
       </div>
     </Drawer>
   );

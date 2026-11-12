@@ -161,7 +161,17 @@ export default function ApprovalsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-[13.5px] font-semibold text-ink-900">{a.title}</p>
-                    <Badge tone={a.entityType === "waiver" ? "violet" : a.entityType === "expense" ? "amber" : "blue"}>
+                    <Badge
+                      tone={
+                        a.entityType === "waiver"
+                          ? "violet"
+                          : a.entityType === "expense" ||
+                              a.entityType === "payment_edit" ||
+                              a.entityType === "payment_reset"
+                            ? "amber"
+                            : "blue"
+                      }
+                    >
                       {a.entityType}
                     </Badge>
                   </div>

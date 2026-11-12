@@ -183,7 +183,14 @@ export interface FeeOverride {
 export interface Approval {
   id: string;
   tenantId: string;
-  entityType: "payment" | "expense" | "waiver" | "member";
+  entityType:
+    | "payment"
+    | "expense"
+    | "waiver"
+    | "member"
+    | "fee_change"
+    | "payment_reset"
+    | "payment_edit";
   entityId: string;
   title: string;
   subtitle: string;

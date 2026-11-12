@@ -1,0 +1,25 @@
+name = "r2-quota-checker"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[build]
+command = ""
+
+[vars]
+# R2 bucket name (optional, for reference)
+R2_BUCKET_NAME = "anjuman-assets"
+
+# Warning threshold (percentage of limit)
+WARNING_THRESHOLD = "0.95"
+
+# Hard limit in GB
+QUOTA_LIMIT_GB = "10"
+
+[triggers]
+crons = ["0 2 * * *"]  # Daily at 2 AM UTC
+
+[[kv_namespaces]]
+binding = "R2_QUOTA_KV"
+id = "<YOUR_KV_NAMESPACE_ID>"
+preview_id = "<YOUR_PREVIEW_KV_ID>"

@@ -1,0 +1,16 @@
+{
+  "name": "r2-quota-checker",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0",
+    "typescript": "^5.0.0",
+    "@cloudflare/workers-types": "^4.2024000.0"
+  }
+}

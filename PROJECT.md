@@ -4,7 +4,7 @@
 > database me kya hai, paisa kaise calculate hota hai, aur bug aaye to **direct kis file me
 > haath daalna hai**. Naya developer pehle ye file padhe, phir code khole.
 >
-> **Last verified:** 12 Nov 2026 · production build `b10d3386` · migration head `0037`.
+> **Last verified:** 12 Nov 2026 · migration head `0038` · dashboard error fix deployed.
 
 ---
 
@@ -186,6 +186,7 @@ anjuman/
 │  └─ write-version.mjs        ← writes build timestamp for VersionWatcher
 ├─ .github/workflows/
 │  ├─ deploy.yml               ← typecheck + SQL tests + build + Cloudflare deploy
+│  ├─ migrate.yml              ← applies one migration file via SUPABASE_DB_URL
 │  ├─ backup.yml               ← nightly encrypted backup → GitHub Release
 │  ├─ keepalive.yml            ← daily ping so Supabase free DB doesn't pause
 │  └─ maintenance.yml          ← daily SQL maintenance RPC
@@ -624,6 +625,7 @@ hai).
 | 0035 | `consistency_fixes.sql` | overdue/outstanding/report/ledger/dashboard consistency |
 | 0036 | `qr_bank_registration.sql` | tenant QR/bank fields, `registration_requests`, RPCs, private bucket |
 | 0037 | `payment_settings_rpc.sql` | scoped `save_payment_settings` |
+| 0038 | `fix_dashboard_settled_at.sql` | `dashboard_snapshot` now uses `verified_at`; fixes `column "settled_at" does not exist` |
 
 ### Migration rules
 
@@ -1150,10 +1152,14 @@ npm.cmd run deploy     # wrangler pages deploy out --project-name=anjuman --bran
 
 ### Applying a migration live
 
-- **Preferred:** Supabase Dashboard → SQL Editor → paste new migration → run.
-- **CLI:** `supabase db push` (linked project).
-- **Management API:** pat token ke saath `POST /v1/projects/<ref>/database/query`.
-  ⚠️ Pichhla PAT invalid ho gaya hai; naya token generate karein.
+- **Preferred (no local setup):** GitHub → Actions → **Apply SQL migration** → Run workflow →
+  migration file path. `.github/workflows/migrate.yml` `SUPABASE_DB_URL` secret se pooler
+  connection banata hai aur `psql -v ON_ERROR_STOP=1 -f <file>` chalata hai.
+  Migration file push karne par bhi automatically chalta hai.
+- **Dashboard:** Supabase → SQL Editor → paste migration → run.
+- **CLI:** `supabase db push` (linked project; login/token chahiye).
+- **Management API:** `POST /v1/projects/<ref>/database/query` with a PAT — pichhla PAT
+  invalid ho chuka hai, isliye ab `migrate.yml` preferred hai.
 - Local `psql` install nahi hai. Direct host IPv6-only hai; GitHub runner pooler use karta hai.
 
 ---
@@ -1166,7 +1172,7 @@ npm.cmd run deploy     # wrangler pages deploy out --project-name=anjuman --bran
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `.env.local` + Cloudflare build env | public anon key |
 | `NEXT_PUBLIC_APP_URL` | `.env.local` | QR/verify links (default `https://anjuman.pages.dev`) |
 | `NEXT_PUBLIC_DEMO_MODE` | `.env.local` | `true` = mock data; production me `false`/absent |
-| `SUPABASE_DB_URL` | GitHub secret | backup workflow |
+| `SUPABASE_DB_URL` | GitHub secret | backup + `migrate.yml` workflows |
 | `BACKUP_PASSPHRASE` | GitHub secret | backup encryption |
 
 **Never** in frontend: `service_role`, SMTP password, gateway secret, `BACKUP_PASSPHRASE`.
@@ -1204,6 +1210,7 @@ npm.cmd run deploy     # wrangler pages deploy out --project-name=anjuman --bran
 | Receipt number nahi ban raha | `next_receipt_no()`, `receipt_sequences` | fiscal year row, permissions |
 | Receipt total galat | `apply_verified_payment()`, `payment_allocations` | allocation sum + advance |
 | Invoice paid galat | `sync_invoice_status()`, `invoices.paid_paise` | allocations se recompute |
+| Dashboard: `column "settled_at" does not exist` | `0038_fix_dashboard_settled_at.sql` | `dashboard_snapshot` me `verified_at` use karein (column ka naam `settled_at` nahi hai) |
 | Outstanding galat | `0030`/`0034`, `dashboard`, `reports` | inactive members? advance net? `joined_on`? |
 | Fund balance galat / negative | `0034_calculation_integrity.sql`, `funds` | source documents se recompute; restricted fund |
 | Zakat/Sadqa/Gift mix ho raha | `0025`, `0016`, donation fund select | fund code sahi? |
@@ -1350,7 +1357,7 @@ Koi bhi bug fix karne se pehle:
 | --- | --- | --- |
 | Email delivery to real users | ⚠️ unconfirmed | Hostinger SMTP configured; actual inbox delivery user ne confirm nahi kiya |
 | Real impersonation | ⚠️ partial | Abhi sirf localStorage tenant id cosmetic; DB-level impersonation nahi |
-| Supabase Management API PAT | ❌ invalid | Naya token chahiye; SQL Editor/CLI use karein |
+| Supabase Management API PAT | ❌ invalid | `migrate.yml` (GitHub Actions + `SUPABASE_DB_URL`) use karein |
 | Platform-managed tenant creation from registration | manual | Approval ke baad Super Admin manually tenant banata hai |
 | TOTP | optional | Email OTP new-device default; TOTP extra lock |
 | `collector` approval rights | none | By design: collect only |

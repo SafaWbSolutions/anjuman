@@ -17,9 +17,10 @@ on:
       file:
         description: "Migration file path"
         required: true
-        default: "supabase/migrations/0040_member_pause_resume.sql"
+        default: "supabase/migrations/0041_import_raziya_manzil.sql"
   push:
     paths:
+      - "supabase/migrations/0041_import_raziya_manzil.sql"
       - "supabase/migrations/0040_member_pause_resume.sql"
       - "supabase/migrations/0039_restore_member.sql"
       - "supabase/migrations/0038_fix_dashboard_settled_at.sql"
@@ -79,7 +80,7 @@ jobs:
       - name: Apply migration
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0040_member_pause_resume.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0041_import_raziya_manzil.sql' }}
         run: |
           set -euo pipefail
           test -f "$FILE"
@@ -89,7 +90,7 @@ jobs:
       - name: Verify migration result
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0040_member_pause_resume.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0041_import_raziya_manzil.sql' }}
         run: |
           set -euo pipefail
           case "$FILE" in
@@ -154,6 +155,56 @@ jobs:
             end if;
           end $$;
           select 'member_status.paused OK' as result;
+          SQL
+              ;;
+            *0041*)
+              psql "$DB_URL_RUN" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare
+            v_tenant  uuid;
+            v_members int;
+            v_paid    bigint;
+            v_due     bigint;
+          begin
+            select id into v_tenant
+              from public.tenants
+             where code = 'RMHC' or name ilike '%Raziya Manzil%'
+             order by (code = 'RMHC') desc, created_at asc
+             limit 1;
+
+            if v_tenant is null then
+              raise exception 'Raziya Manzil tenant not found';
+            end if;
+
+            select count(*) into v_members
+              from public.members
+             where tenant_id = v_tenant and notes like 'old-app:user:%';
+
+            select coalesce(sum(amount_paise), 0) into v_paid
+              from public.payments
+             where tenant_id = v_tenant and receipt_no like 'OLD-%';
+
+            select coalesce(sum(i.amount_paise - i.paid_paise), 0) into v_due
+              from public.invoices i
+              join public.members m on m.id = i.member_id
+             where i.tenant_id = v_tenant
+               and m.notes like 'old-app:user:%'
+               and i.status in ('pending','partial');
+
+            raise notice 'Raziya import: members=%, paid_paise=%, due_paise=%',
+              v_members, v_paid, v_due;
+
+            if v_members <> 37 then
+              raise exception 'Expected 37 imported members, found %', v_members;
+            end if;
+            if v_paid <> 2510000 then
+              raise exception 'Expected paid 2510000 paise, found %', v_paid;
+            end if;
+            if v_due <> 160000 then
+              raise exception 'Expected due 160000 paise, found %', v_due;
+            end if;
+          end $$;
+          select 'Raziya Manzil import OK' as result;
           SQL
               ;;
             *)

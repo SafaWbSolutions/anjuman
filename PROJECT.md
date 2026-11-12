@@ -4,7 +4,7 @@
 > database me kya hai, paisa kaise calculate hota hai, aur bug aaye to **direct kis file me
 > haath daalna hai**. Naya developer pehle ye file padhe, phir code khole.
 >
-> **Last verified:** 12 Nov 2026 · migration head `0040` · member pause/resume/archive/delete with dual approval deployed.
+> **Last verified:** 12 Nov 2026 · migration head `0041` · member pause/resume + Raziya Manzil data import deployed.
 
 ---
 
@@ -637,6 +637,7 @@ hai).
 | 0038 | `fix_dashboard_settled_at.sql` | `dashboard_snapshot` now uses `verified_at`; fixes `column "settled_at" does not exist` |
 | 0039 | `restore_member.sql` | Sadar can restore an archived member back to active |
 | 0040 | `member_pause_resume.sql` | Member pause/resume/archive/delete with dual approval (maker-checker) |
+| 0041 | `import_raziya_manzil.sql` | One-off import of the old PHP app data for RMHC (37 members, receipts, dues, expenses, gifts) |
 
 ### Migration rules
 
@@ -908,11 +909,30 @@ har table par role-level nahi. Iska matlab:
    - matching **credit reversal** ledger me
 4. Kuch silently delete nahi hota; sab audit trail me.
 
+### 15.8b Raziya Manzil old-app data import (one-off, 0041)
+
+Source: `u409071687_raziya_manzil.sql` (old PHP app). Target tenant: code `RMHC`.
+
+- **37 members** imported (`notes='old-app:user:<id>'`), fee ₹100/month.
+- **217 verified receipts** (₹25,100) with `OLD-<id>` receipt numbers.
+- **232 invoices** built from old `monthly_dues` + every month that has a payment.
+- **Reconciled outstanding ₹1,600** (16 × ₹100); old `monthly_dues` flags were
+  stale (₹3,500), so allocation follows the payments.
+- **₹100 advance** (one member had two payments in the same month).
+- **3 expenses ₹2,477** + **2 gifts ₹1,500** (verified donations) imported.
+- Fund balance after import: **₹24,123** (25,100 + 1,500 − 2,477).
+- Ledger hash chain verified intact (`verify_ledger` → null).
+- Old passwords are **not** imported (bcrypt not compatible with Supabase Auth);
+  members need a fresh login.
+- Idempotent: re-running 0041 does not duplicate members, invoices, receipts,
+  expenses or gifts.
+- Orphan old user #38 had a ₹100 due but no member row → excluded.
+
 ### 15.9 Approvals engine
 
 - Ek hi queue: `/approvals/`.
 - `decide_approval(id, decision, note)` sab kuch handle karta hai.
-- `entity_type`: `payment`, `expense`, `waiver`, `member`, `fee_change`, `payment_edit`.
+- `entity_type`: `payment`, `expense`, `waiver`, `member`, `fee_change`, `payment_edit`, `payment_reset`, `member_pause`, `member_resume`, `member_archive`, `member_delete`.
 - `guard_approval_insert/update` self-decision block karte hain.
 - UI me button hide karna kaafi nahi — DB dobara check karta hai.
 

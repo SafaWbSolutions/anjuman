@@ -5,6 +5,7 @@
   "description": "Anjuman / Masjid community management platform — admin panel",
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/write-version.mjs",
     "build": "next build",
     "preview": "npx serve out",
     "deploy": "npx --yes wrangler@latest pages deploy out --project-name=anjuman --branch=main",

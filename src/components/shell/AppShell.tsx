@@ -289,9 +289,68 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <VersionWatcher />
       <Toaster />
     </div>
   );
+}
+
+/**
+ * Keeps long-lived tabs (mostly mobile) on the current deployment.
+ * Compares /version.json (written by scripts/write-version.mjs before
+ * every build) and reloads once when the stamp changes.
+ */
+function VersionWatcher() {
+  useEffect(() => {
+    const KEY = "anjuman.build";
+    const RELOAD_KEY = "anjuman.build.reload";
+    let cancelled = false;
+
+    async function check() {
+      try {
+        const res = await fetch(`/version.json?t=${Date.now()}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { version?: string };
+        const next = String(data.version ?? "");
+        if (!next || cancelled) return;
+
+        const seen = window.localStorage.getItem(KEY);
+        if (!seen) {
+          window.localStorage.setItem(KEY, next);
+          return;
+        }
+        if (seen === next) return;
+
+        // Never loop: at most one automatic reload per minute.
+        const last = Number(window.sessionStorage.getItem(RELOAD_KEY) ?? 0);
+        if (Date.now() - last < 60_000) return;
+        window.sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+        window.localStorage.setItem(KEY, next);
+        window.location.reload();
+      } catch {
+        /* offline or blocked — try again later */
+      }
+    }
+
+    void check();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") void check();
+    }, 10 * 60_000);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      window.clearInterval(id);
+    };
+  }, []);
+
+  return null;
 }
 
 function SidebarContent({

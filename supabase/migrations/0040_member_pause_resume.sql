@@ -504,6 +504,13 @@ begin
           raise exception 'Only the sadar or secretary can approve a fee change';
         end if;
         perform public.approve_fee_override(a.entity_id);
+        -- Notify member about fee change
+        perform public.notify_member(
+          a.entity_id, 'info',
+          'Monthly fee updated',
+          'Aapka monthly fee badla gaya hai. Naya amount agle mahine se laagu hoga.',
+          jsonb_build_object('approved_by', auth.uid(), 'note', p_note)
+        );
 
       when 'waiver' then
         if coalesce(v_role in ('sadar','secretary'), false) is not true then
@@ -531,6 +538,13 @@ begin
         if v_waived = 0 then
           raise exception 'Nothing left to waive — the dues were already settled';
         end if;
+        -- Notify member about waiver
+        perform public.notify_member(
+          a.entity_id, 'info',
+          'Dues waived for selected months',
+          v_waived::text || ' mahine ka due maaf kiya gaya hai. Receipts par "waived" dikhega.',
+          jsonb_build_object('approved_by', auth.uid(), 'months_waived', v_waived, 'note', p_note)
+        );
         v_result := v_waived::text;
 
       when 'payment_reset' then
@@ -645,6 +659,24 @@ begin
         end if;
         perform public.reject_expense(a.entity_id, p_note);
         v_result := 'expense_rejected';
+
+      when 'fee_change' then
+        perform public.notify_member(
+          a.entity_id, 'info',
+          'Fee change request rejected',
+          'Aapka fee change request approve nahi hua. Wajah: ' || coalesce(p_note, 'Office ne reject kiya'),
+          jsonb_build_object('rejected_by', auth.uid(), 'note', p_note)
+        );
+        v_result := 'fee_change_rejected';
+
+      when 'waiver' then
+        perform public.notify_member(
+          a.entity_id, 'info',
+          'Waiver request rejected',
+          'Aapka dues waiver request approve nahi hua. Wajah: ' || coalesce(p_note, 'Office ne reject kiya'),
+          jsonb_build_object('rejected_by', auth.uid(), 'note', p_note)
+        );
+        v_result := 'waiver_rejected';
 
       when 'member_pause', 'member_resume', 'member_archive', 'member_delete' then
         -- Anyone who could approve can also reject

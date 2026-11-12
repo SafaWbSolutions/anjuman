@@ -52,6 +52,7 @@ import {
 import { isDemoMode } from "@/lib/supabase";
 import { formatINR, formatDate, periodLabel, cn } from "@/lib/utils";
 import { ReceiptDrawer, receiptOf, type ReceiptInfo } from "@/components/receipt";
+import { CollectPaymentDrawer } from "@/components/collect-payment-drawer";
 import {
   Avatar,
   Badge,
@@ -105,6 +106,7 @@ export default function MembersPage() {
   const [loginMember, setLoginMember] = useState<Member | null>(null);
   const [editMember, setEditMember] = useState<Member | null>(null);
   const [editPayment, setEditPayment] = useState<Payment | null>(null);
+  const [collectMember, setCollectMember] = useState<Member | null>(null);
 
   const [members, setMembers] = useState<Member[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -440,6 +442,7 @@ export default function MembersPage() {
         tenantName={tenantName}
         onClose={() => setSelected(null)}
         onCreateLogin={(m) => setLoginMember(m)}
+        onCollect={(m) => setCollectMember(m)}
         onEdit={(m) => setEditMember(m)}
         onPause={async (m, reason) => {
           try {
@@ -513,6 +516,17 @@ export default function MembersPage() {
         payment={editPayment}
         member={members.find((m) => m.id === editPayment?.memberId) ?? null}
         onClose={() => setEditPayment(null)}
+      />
+      <CollectPaymentDrawer
+        open={!!collectMember}
+        members={members}
+        invoices={invoices}
+        defaultMemberId={collectMember?.id}
+        onClose={() => setCollectMember(null)}
+        onSaved={async () => {
+          setCollectMember(null);
+          await load();
+        }}
       />
       <CreateLoginDrawer member={loginMember} onClose={() => setLoginMember(null)} />
       <EditMemberDrawer
@@ -645,6 +659,7 @@ function MemberDrawer({
   tenantName,
   onClose,
   onCreateLogin,
+  onCollect,
   onEdit,
   onPause,
   onResume,
@@ -661,6 +676,7 @@ function MemberDrawer({
   tenantName: string;
   onClose: () => void;
   onCreateLogin: (member: Member) => void;
+  onCollect: (member: Member) => void;
   onEdit: (member: Member) => void;
   onPause: (member: Member, reason: string) => Promise<void>;
   onResume: (member: Member, reason: string) => Promise<void>;
@@ -871,7 +887,7 @@ function MemberDrawer({
               <IdCard className="h-3.5 w-3.5" /> ID card
             </Button>
             {isActive && (
-              <Button size="sm" onClick={() => toast("Payment entry opened")}>
+              <Button size="sm" onClick={() => onCollect(member)}>
                 <Wallet className="h-3.5 w-3.5" /> Collect
               </Button>
             )}

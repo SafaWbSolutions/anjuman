@@ -4,7 +4,7 @@
 > database me kya hai, paisa kaise calculate hota hai, aur bug aaye to **direct kis file me
 > haath daalna hai**. Naya developer pehle ye file padhe, phir code khole.
 >
-> **Last verified:** 12 Nov 2026 · migration head `0043` · Raziya monthly hisab + gift reclassification deployed.
+> **Last verified:** 12 Nov 2026 · migration head `0044` · collection form with date/method/UTR/remarks deployed.
 
 ---
 
@@ -640,6 +640,7 @@ hai).
 | 0041 | `import_raziya_manzil.sql` | One-off import of the old PHP app data for RMHC (37 members, receipts, dues, expenses, gifts) |
 | 0042 | `rebuild_raziya_monthly.sql` | Rebuilds 12 months of dues (Dec 2025–Nov 2026) for every imported member; net due ₹23,000 |
 | 0043 | `reclassify_raziya_gifts.sql` | Moves the 2 imported gifts (₹1,500) from General Fund to GIFT fund |
+| 0044 | `collection_date.sql` | Collection date drives `verified_at` + ledger date; future dates blocked |
 
 ### Migration rules
 
@@ -773,7 +774,13 @@ har table par role-level nahi. Iska matlab:
 
 1. **Collector / Sadar / Khajanchi** `/finance/collections/` par payment record karta hai
    (auditor bhi page dekh sakta hai aur verify kar sakta hai, par apni entry nahi).
-   - `createPayment` → `payments` row `status='pending'`, `entered_by = current user`.
+   - Members drawer ka **Collect** button bhi wahi shared drawer kholta hai.
+   - Form fields: member, 1/2/all months, **method** (cash / UPI / gateway / cheque),
+     **UTR / transaction / cheque no.**, **remarks**, aur **collection date**.
+   - Collection date default **today** hoti hai; "Same as today" checkbox hata kar
+     purani date choose kar sakte hain (future date blocked).
+   - `createPayment` → `payments` row `status='pending'`, `entered_by = current user`,
+     `created_at = chosen collection date`.
    - Receipt number **verify hone ke baad** milta hai (`next_receipt_no`).
 2. Queue me approver ko dikhta hai.
 3. Approver **doosra role** hona chahiye:
@@ -782,7 +789,8 @@ har table par role-level nahi. Iska matlab:
 4. Verify par:
    - `apply_verified_payment()` allocations banata hai, invoice status sync karta hai,
      ledger entry append karta hai, fund balance update karta hai.
-   - `settled_at` / `verified_at` set hota hai (reporting isi date se hoti hai).
+   - **Collection date** (`payments.created_at`) hi `verified_at` aur ledger
+     `entry_date` banti hai (0044) — backdated entry bhi sahi month me report hoti hai.
    - Receipt number assign hota hai.
    - Member ko notification + receipt queue.
 5. Reject → `status='rejected'`, reason note, no ledger impact.

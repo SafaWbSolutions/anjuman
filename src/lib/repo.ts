@@ -1832,6 +1832,8 @@ export interface NewPayment {
   method: Payment["method"];
   reference?: string;
   note?: string;
+  /** Collection date/time. Omit for "now". */
+  createdAt?: string;
 }
 
 /** Insert a collection. The guard forces status = pending. */
@@ -1845,9 +1847,9 @@ export async function createPayment(input: NewPayment): Promise<Payment> {
       method: input.method,
       reference: input.reference ?? "",
       status: "pending",
-      receiptNo: "—",
+      receiptNo: "-",
       enteredBy: "demo",
-      createdAt: new Date().toISOString(),
+      createdAt: input.createdAt ?? new Date().toISOString(),
       note: input.note,
     };
   }
@@ -1862,6 +1864,7 @@ export async function createPayment(input: NewPayment): Promise<Payment> {
       method: input.method,
       reference: input.reference ?? null,
       note: input.note ?? null,
+      created_at: input.createdAt ?? new Date().toISOString(),
     })
     .select("*")
     .single();

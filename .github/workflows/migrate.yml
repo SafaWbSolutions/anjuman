@@ -17,9 +17,10 @@ on:
       file:
         description: "Migration file path"
         required: true
-        default: "supabase/migrations/0043_reclassify_raziya_gifts.sql"
+        default: "supabase/migrations/0044_collection_date.sql"
   push:
     paths:
+      - "supabase/migrations/0044_collection_date.sql"
       - "supabase/migrations/0043_reclassify_raziya_gifts.sql"
       - "supabase/migrations/0042_rebuild_raziya_monthly.sql"
       - "supabase/migrations/0041_import_raziya_manzil.sql"
@@ -82,7 +83,7 @@ jobs:
       - name: Apply migration
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0043_reclassify_raziya_gifts.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0044_collection_date.sql' }}
         run: |
           set -euo pipefail
           test -f "$FILE"
@@ -92,7 +93,7 @@ jobs:
       - name: Verify migration result
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0043_reclassify_raziya_gifts.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0044_collection_date.sql' }}
         run: |
           set -euo pipefail
           case "$FILE" in
@@ -320,6 +321,37 @@ jobs:
             end if;
           end $$;
           select 'Raziya gifts reclassified OK' as result;
+          SQL
+              ;;
+            *0044*)
+              psql "$DB_URL_RUN" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare
+            v_apply text;
+            v_guard text;
+          begin
+            select prosrc into v_apply
+              from pg_proc p
+              join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public'
+               and p.proname = 'apply_verified_payment'
+             limit 1;
+
+            select prosrc into v_guard
+              from pg_proc p
+              join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public'
+               and p.proname = 'guard_payment_insert'
+             limit 1;
+
+            if v_apply is null or v_apply not like '%coalesce(p.created_at, now())%' then
+              raise exception 'apply_verified_payment is not using the collection date';
+            end if;
+            if v_guard is null or v_guard not like '%Collection date future%' then
+              raise exception 'guard_payment_insert is missing the future-date check';
+            end if;
+          end $$;
+          select 'collection date logic OK' as result;
           SQL
               ;;
             *)

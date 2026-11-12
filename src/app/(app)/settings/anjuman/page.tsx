@@ -407,8 +407,13 @@ export default function AnjumanProfilePage() {
           <Card className="overflow-hidden">
             <div className="bg-ink-900 p-5 text-white">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 text-sm font-bold">
-                  {t.code}
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-brand-500 text-sm font-bold">
+                  {t.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={t.logoUrl} alt="" className="h-full w-full bg-white object-contain" />
+                  ) : (
+                    t.code
+                  )}
                 </span>
                 <div className="min-w-0">
                   <p className="truncate text-[13px] font-semibold">{t.name}</p>

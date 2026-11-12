@@ -592,8 +592,13 @@ function MemberCard({
     <div className="id-card flex flex-col text-ink-900" data-card-member={member.id}>
       {/* header */}
       <div className="relative flex items-center gap-2 bg-ink-900 px-3 py-2 text-white">
-        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand-500 text-[11px] font-bold">
-          ا
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md bg-brand-500 text-[11px] font-bold">
+          {tenant?.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={tenant.logoUrl} alt="" className="h-full w-full bg-white object-contain" />
+          ) : (
+            "ا"
+          )}
         </span>
         <div className="min-w-0 leading-tight">
           <p className="truncate text-[9px] font-semibold tracking-wide">

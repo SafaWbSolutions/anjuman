@@ -161,6 +161,14 @@ export function ReceiptDrawer({
           )}
         >
           <div className="text-center">
+            {tenant.logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={tenant.logoUrl}
+                alt=""
+                className="mx-auto mb-1 h-9 w-9 object-contain"
+              />
+            )}
             <p className="text-[13px] font-bold tracking-wide">{tenant.name}</p>
             <p className="text-[9px]">
               {tenant.masjid}, {tenant.village}

@@ -170,6 +170,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           sections={sections}
           pathname={pathname}
           tenantName={user.tenantName}
+          tenantLogoUrl={user.tenantLogoUrl}
           role={user.role}
           onSignOut={signOut}
           userName={user.name}
@@ -357,6 +358,7 @@ function SidebarContent({
   sections,
   pathname,
   tenantName,
+  tenantLogoUrl,
   role,
   onSignOut,
   userName,
@@ -365,6 +367,7 @@ function SidebarContent({
   sections: ReturnType<typeof navForRole>;
   pathname: string;
   tenantName: string;
+  tenantLogoUrl?: string | null;
   role: Role;
   onSignOut: () => void;
   userName: string;
@@ -373,8 +376,13 @@ function SidebarContent({
   return (
     <>
       <div className="flex h-16 items-center gap-2.5 border-b border-white/10 px-5">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-[15px] font-bold text-white shadow-lg shadow-brand-500/30">
-          ا
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-brand-500 text-[15px] font-bold text-white shadow-lg shadow-brand-500/30">
+          {tenantLogoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={tenantLogoUrl} alt="" className="h-full w-full object-contain bg-white" />
+          ) : (
+            "ا"
+          )}
         </span>
         <div className="leading-tight">
           <p className="text-[15px] font-semibold text-white">Anjuman</p>

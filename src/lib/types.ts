@@ -362,6 +362,8 @@ export interface SessionUser {
   role: Role;
   tenantId: string | null;
   tenantName: string;
+  /** Anjuman logo shown in the sidebar and ID cards. */
+  tenantLogoUrl?: string | null;
   /** Profile picture, if the user uploaded one. */
   photoUrl?: string | null;
   /** Members row linked to this profile, for the member portal. */

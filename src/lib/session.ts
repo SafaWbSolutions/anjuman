@@ -23,6 +23,8 @@ export async function loadSessionUser(userId: string): Promise<SessionUser | nul
 
   let tenantName = "";
   let tenantLogoUrl: string | null = null;
+  let tenantMasjid = "";
+  let tenantVillage = "";
   if (profile.tenant_id) {
     // my_tenant_status() bypasses RLS so it keeps working when
     // current_tenant_id() is NULL for a suspended tenant.
@@ -32,11 +34,13 @@ export async function loadSessionUser(userId: string): Promise<SessionUser | nul
 
     const { data: tenant } = await supabase
       .from("tenants")
-      .select("name, status, logo_url")
+      .select("name, status, logo_url, masjid, village")
       .eq("id", profile.tenant_id)
       .maybeSingle();
     tenantName = tenant?.name ?? "";
     tenantLogoUrl = tenant?.logo_url ?? null;
+    tenantMasjid = tenant?.masjid ?? "";
+    tenantVillage = tenant?.village ?? "";
     if (tenantStatus === null && typeof tenant?.status === "string") {
       tenantStatus = tenant.status;
     }
@@ -65,6 +69,8 @@ export async function loadSessionUser(userId: string): Promise<SessionUser | nul
     tenantId: profile.tenant_id ?? null,
     tenantName,
     tenantLogoUrl,
+    tenantMasjid,
+    tenantVillage,
     memberId: profile.member_id ?? null,
     photoUrl: profile.photo_url ?? null,
   };

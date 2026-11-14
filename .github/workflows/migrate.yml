@@ -17,9 +17,10 @@ on:
       file:
         description: "Migration file path"
         required: true
-        default: "supabase/migrations/0045_tenant_masjid_photo.sql"
+        default: "supabase/migrations/0046_ads.sql"
   push:
     paths:
+      - "supabase/migrations/0046_ads.sql"
       - "supabase/migrations/0045_tenant_masjid_photo.sql"
       - "supabase/migrations/0044_collection_date.sql"
       - "supabase/migrations/0043_reclassify_raziya_gifts.sql"
@@ -84,7 +85,7 @@ jobs:
       - name: Apply migration
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0045_tenant_masjid_photo.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0046_ads.sql' }}
         run: |
           set -euo pipefail
           test -f "$FILE"
@@ -94,7 +95,7 @@ jobs:
       - name: Verify migration result
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0045_tenant_masjid_photo.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0046_ads.sql' }}
         run: |
           set -euo pipefail
           case "$FILE" in
@@ -369,6 +370,47 @@ jobs:
             end if;
           end $$;
           select 'tenants.masjid_photo_url OK' as result;
+          SQL
+              ;;
+            *0046*)
+              psql "$DB_URL_RUN" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          begin
+            if not exists (
+              select 1 from information_schema.tables
+               where table_schema = 'public' and table_name = 'ads'
+            ) then
+              raise exception 'ads table is missing';
+            end if;
+            if not exists (
+              select 1 from information_schema.tables
+               where table_schema = 'public' and table_name = 'ad_targets'
+            ) then
+              raise exception 'ad_targets table is missing';
+            end if;
+            if not exists (
+              select 1 from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and p.proname = 'list_active_ads'
+            ) then
+              raise exception 'list_active_ads() is missing';
+            end if;
+            if not exists (
+              select 1 from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and p.proname = 'record_ad_event'
+            ) then
+              raise exception 'record_ad_event() is missing';
+            end if;
+            if not exists (
+              select 1 from pg_class c
+                join pg_namespace n on n.oid = c.relnamespace
+               where n.nspname = 'public' and c.relname = 'ads' and c.relrowsecurity
+            ) then
+              raise exception 'RLS is not enabled on ads';
+            end if;
+          end $$;
+          select 'ads gallery OK' as result;
           SQL
               ;;
             *)

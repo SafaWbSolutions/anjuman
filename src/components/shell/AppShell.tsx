@@ -25,6 +25,7 @@ import { generateInvoices, getWorkQueue, listComplaints } from "@/lib/repo";
 import { isDemoMode } from "@/lib/supabase";
 import { Avatar, Badge, Toaster, toast } from "@/components/ui";
 import { MadeBy } from "@/components/brand";
+import { AdBanner } from "@/components/ad-banner";
 
 const iconFor = (name: string): LucideIcon =>
   (Icons[name as keyof typeof Icons] as LucideIcon) ?? Icons.Circle;
@@ -285,6 +286,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">
+          <AdBanner />
           {children}
         </main>
       </div>

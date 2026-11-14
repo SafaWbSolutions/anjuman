@@ -30,6 +30,8 @@ import {
   tenants as mockTenants,
 } from "./mock";
 import type {
+  Ad,
+  AdInput,
   Approval,
   Complaint,
   Donation,
@@ -1311,6 +1313,157 @@ export async function listTenants(): Promise<Tenant[]> {
 
   if (error) throw error;
   return (data ?? []).map(toTenant);
+}
+
+/* ── Ads / announcements ──────────────────────────────────────── */
+
+function toAd(r: Row): Ad {
+  return {
+    id: r.id,
+    title: r.title ?? "Untitled",
+    imageUrl: r.image_url ?? "",
+    linkUrl: r.link_url ?? null,
+    isGlobal: Boolean(r.is_global),
+    isActive: Boolean(r.is_active),
+    sortOrder: num(r.sort_order),
+    startsAt: r.starts_at ?? null,
+    endsAt: r.ends_at ?? null,
+    tenantIds: Array.isArray(r.ad_targets)
+      ? r.ad_targets
+          .map((t: Row) => t.tenant_id)
+          .filter((id: unknown): id is string => typeof id === "string")
+      : [],
+    impressions: num(r.impressions),
+    clicks: num(r.clicks),
+    createdAt: r.created_at ?? "",
+  };
+}
+
+/** Every ad with its targeting — super admin only. */
+export async function listAds(): Promise<Ad[]> {
+  if (isDemoMode) return [];
+
+  const { data, error } = await client()
+    .from("ads")
+    .select("*, ad_targets(tenant_id)")
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []).map(toAd);
+}
+
+/** Active ads the signed-in user may see (global + their anjuman). */
+export async function listActiveAds(): Promise<Ad[]> {
+  if (isDemoMode) return [];
+
+  const { data, error } = await client().rpc("list_active_ads");
+  if (error) throw error;
+  return ((data ?? []) as Row[]).map(toAd);
+}
+
+export async function createAd(input: AdInput): Promise<string> {
+  if (isDemoMode) throw new Error("Demo mode me ad save nahi hoti");
+
+  const { data, error } = await client()
+    .from("ads")
+    .insert({
+      title: input.title.trim() || "Untitled",
+      image_url: input.imageUrl,
+      link_url: input.linkUrl || null,
+      is_global: input.isGlobal,
+      is_active: input.isActive,
+      sort_order: input.sortOrder,
+      starts_at: input.startsAt || null,
+      ends_at: input.endsAt || null,
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  const id = String((data as Row)?.id ?? "");
+
+  if (!input.isGlobal && id && input.tenantIds.length > 0) {
+    const { error: targetError } = await client()
+      .from("ad_targets")
+      .insert(input.tenantIds.map((tenantId) => ({ ad_id: id, tenant_id: tenantId })));
+    if (targetError) throw targetError;
+  }
+
+  return id;
+}
+
+export async function updateAd(id: string, input: AdInput): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client()
+    .from("ads")
+    .update({
+      title: input.title.trim() || "Untitled",
+      image_url: input.imageUrl,
+      link_url: input.linkUrl || null,
+      is_global: input.isGlobal,
+      is_active: input.isActive,
+      sort_order: input.sortOrder,
+      starts_at: input.startsAt || null,
+      ends_at: input.endsAt || null,
+    })
+    .eq("id", id);
+
+  if (error) throw error;
+
+  const { error: clearError } = await client()
+    .from("ad_targets")
+    .delete()
+    .eq("ad_id", id);
+  if (clearError) throw clearError;
+
+  if (!input.isGlobal && input.tenantIds.length > 0) {
+    const { error: targetError } = await client()
+      .from("ad_targets")
+      .insert(input.tenantIds.map((tenantId) => ({ ad_id: id, tenant_id: tenantId })));
+    if (targetError) throw targetError;
+  }
+}
+
+export async function setAdActive(id: string, active: boolean): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client()
+    .from("ads")
+    .update({ is_active: active })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteAd(id: string): Promise<void> {
+  if (isDemoMode) return;
+
+  const { error } = await client().from("ads").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/** Upload the banner image to R2 under ads/<ad-id>/ (super admin only). */
+export async function uploadAdImage(file: File, adId: string): Promise<string> {
+  if (isDemoMode) return "";
+
+  const ext =
+    (file.name.split(".").pop() ?? "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  const path = `ads/${adId}/banner-${Date.now()}.${ext}`;
+  return uploadToR2(file, path, { contentType: file.type || "image/jpeg" });
+}
+
+/** Fire-and-forget counter. Never blocks the UI. */
+export async function recordAdEvent(
+  id: string,
+  kind: "impression" | "click"
+): Promise<void> {
+  if (isDemoMode) return;
+  try {
+    await client().rpc("record_ad_event", { p_ad_id: id, p_kind: kind });
+  } catch {
+    /* counters are cosmetic — ignore */
+  }
 }
 
 export interface Integration {

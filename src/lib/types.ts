@@ -69,6 +69,39 @@ export interface Tenant {
   features?: Record<string, boolean>;
 }
 
+/* ── Ads / announcements ─────────────────────────────────────── */
+
+export interface Ad {
+  id: string;
+  title: string;
+  /** Public R2 URL. Recommended size: 1280×720 (YouTube thumbnail). */
+  imageUrl: string;
+  /** Optional click-through target. Must be http(s). */
+  linkUrl?: string | null;
+  /** true = every anjuman; false = only `tenantIds`. */
+  isGlobal: boolean;
+  isActive: boolean;
+  sortOrder: number;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  tenantIds: string[];
+  impressions: number;
+  clicks: number;
+  createdAt: string;
+}
+
+export interface AdInput {
+  title: string;
+  imageUrl: string;
+  linkUrl?: string | null;
+  isGlobal: boolean;
+  isActive: boolean;
+  sortOrder: number;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  tenantIds: string[];
+}
+
 export type RegistrationStatus = "pending" | "approved" | "rejected";
 
 export interface RegistrationRequest {
@@ -364,6 +397,10 @@ export interface SessionUser {
   tenantName: string;
   /** Anjuman logo shown in the sidebar and ID cards. */
   tenantLogoUrl?: string | null;
+  /** Masjid name, used on the top banner. */
+  tenantMasjid?: string;
+  /** Village / town, used on the top banner. */
+  tenantVillage?: string;
   /** Profile picture, if the user uploaded one. */
   photoUrl?: string | null;
   /** Members row linked to this profile, for the member portal. */

@@ -71,7 +71,11 @@ async function handleUpload(request: Request, env: Env, url: URL): Promise<Respo
 
   // Only public assets go to R2. KYC documents stay in the private
   // Supabase bucket.
-  if (!key.startsWith("avatars/") && !key.startsWith("tenants/")) {
+  if (
+    !key.startsWith("avatars/") &&
+    !key.startsWith("tenants/") &&
+    !key.startsWith("ads/")
+  ) {
     return json({ error: "Key not allowed" }, 400);
   }
 
@@ -97,6 +101,14 @@ async function handleUpload(request: Request, env: Env, url: URL): Promise<Respo
     }
   }
 
+  // Ads are platform-wide, so only the platform admin may upload them.
+  if (key.startsWith("ads/")) {
+    const profile = await getProfile(env, token, user.id);
+    if (!profile || profile.role !== "super_admin") {
+      return json({ error: "Only the platform admin can upload ads" }, 403);
+    }
+  }
+
   const bytes = new Uint8Array(await file.arrayBuffer());
   await env.R2_BUCKET.put(key, bytes, {
     httpMetadata: { contentType: type, cacheControl: "public, max-age=31536000, immutable" },
@@ -110,7 +122,11 @@ async function handleUpload(request: Request, env: Env, url: URL): Promise<Respo
 async function serveFile(request: Request, env: Env, url: URL): Promise<Response> {
   const key = normaliseKey(decodeURIComponent(url.pathname.slice("/files/".length)));
   if (!key) return new Response("Not found", { status: 404 });
-  if (!key.startsWith("avatars/") && !key.startsWith("tenants/")) {
+  if (
+    !key.startsWith("avatars/") &&
+    !key.startsWith("tenants/") &&
+    !key.startsWith("ads/")
+  ) {
     return new Response("Not found", { status: 404 });
   }
 

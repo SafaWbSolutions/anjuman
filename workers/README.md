@@ -25,6 +25,7 @@ Daily 02:00 ──list bucket + sum sizes───────────▶ r2
 
 - `avatars/...` → member profile photos (any signed-in user)
 - `tenants/<tenant-id>/...` → logo, masjid photo, UPI QR (office bearers only)
+- `ads/<ad-id>/...` → platform announcement banners (**super admin only**)
 - KYC / registration documents stay in the **private Supabase** bucket; they
   are never public.
 

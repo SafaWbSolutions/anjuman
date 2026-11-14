@@ -4,7 +4,7 @@
 > database me kya hai, paisa kaise calculate hota hai, aur bug aaye to **direct kis file me
 > haath daalna hai**. Naya developer pehle ye file padhe, phir code khole.
 >
-> **Last verified:** 12 Nov 2026 · migration head `0044` · collection form with date/method/UTR/remarks deployed.
+> **Last verified:** 14 Nov 2026 · migration head `0046` · ads gallery (global / targeted banners) deployed.
 
 ---
 
@@ -603,7 +603,7 @@ and sets KV `uploads_disabled=true` at 10 GB. The upload Worker returns HTTP 403
 
 ---
 
-## 11. Migrations 0001 → 0037
+## 11. Migrations 0001 → 0046
 
 Migrations **ordered** hain aur live DB par already applied hain. Naya change **naya file**
 `0038_...sql` banakar add karein; purani file edit na karein (live DB me already applied
@@ -655,6 +655,8 @@ hai).
 | 0042 | `rebuild_raziya_monthly.sql` | Rebuilds 12 months of dues (Dec 2025–Nov 2026) for every imported member; net due ₹23,000 |
 | 0043 | `reclassify_raziya_gifts.sql` | Moves the 2 imported gifts (₹1,500) from General Fund to GIFT fund |
 | 0044 | `collection_date.sql` | Collection date drives `verified_at` + ledger date; future dates blocked |
+| 0045 | `tenant_masjid_photo.sql` | `tenants.masjid_photo_url` for branding |
+| 0046 | `ads.sql` | Ads gallery: global / targeted banners, R2 `ads/` prefix, `list_active_ads()`, impression + click counters |
 
 ### Migration rules
 

@@ -73,6 +73,8 @@ Counters are informational, so the client may fire and forget.
 - Progress bar at the bottom, dots to jump, `×` hides it for the session.
 - When no ad is live the banner renders nothing (no empty space).
 - Clicking an ad opens `link_url` in a new tab and increments `clicks`.
+- Impressions count once per displayed ad slide, and only while the tab is
+  visible. Platform-admin previews are not counted.
 - Recommended image: **1280×720**. Client downscales to max 1600 px before
   upload to protect the R2 quota.
 

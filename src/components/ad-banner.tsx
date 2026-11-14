@@ -28,6 +28,14 @@ export function AdBanner() {
   const [index, setIndex] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const onVisibility = () => setVisible(document.visibilityState === "visible");
+    onVisibility();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
 
   useEffect(() => {
     try {
@@ -67,21 +75,24 @@ export function AdBanner() {
   }, [slides.length]);
 
   useEffect(() => {
-    if (slides.length < 2) return;
+    if (slides.length < 2 || !visible) return;
     const id = window.setTimeout(() => {
       setIndex((i) => (i + 1) % slides.length);
     }, SLIDE_MS);
     return () => window.clearTimeout(id);
-  }, [index, slides.length]);
+  }, [index, slides.length, visible]);
 
   const current = slides[index];
+  const isPlatformAdmin = user?.role === "super_admin";
 
-  // Count an impression once per displayed ad slide.
+  // Count an impression once per displayed ad slide. Admin previews and
+  // background tabs never inflate the numbers.
   useEffect(() => {
+    if (!visible || isPlatformAdmin) return;
     if (current?.kind === "ad") {
       void recordAdEvent(current.ad.id, "impression");
     }
-  }, [current]);
+  }, [current, visible, isPlatformAdmin]);
 
   if (!user) return null;
   if (failed || dismissed || slides.length === 0 || !current) return null;
@@ -110,7 +121,7 @@ export function AdBanner() {
             village={user.tenantVillage}
           />
         ) : (
-          <AdSlide ad={current.ad} />
+          <AdSlide ad={current.ad} track={!isPlatformAdmin} />
         )}
       </div>
 
@@ -204,9 +215,9 @@ function BrandSlide({
   );
 }
 
-function AdSlide({ ad }: { ad: Ad }) {
+function AdSlide({ ad, track }: { ad: Ad; track: boolean }) {
   const click = () => {
-    void recordAdEvent(ad.id, "click");
+    if (track) void recordAdEvent(ad.id, "click");
   };
 
   const body = (

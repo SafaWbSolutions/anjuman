@@ -38,7 +38,7 @@ export function AdBanner() {
   }, []);
 
   useEffect(() => {
-    if (!user || user.role === "super_admin" || !user.tenantId) return;
+    if (!user) return;
     let alive = true;
 
     listActiveAds()
@@ -83,7 +83,7 @@ export function AdBanner() {
     }
   }, [current]);
 
-  if (!user || user.role === "super_admin") return null;
+  if (!user) return null;
   if (failed || dismissed || slides.length === 0 || !current) return null;
 
   const close = () => {

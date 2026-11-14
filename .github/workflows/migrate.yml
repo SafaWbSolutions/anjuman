@@ -17,9 +17,10 @@ on:
       file:
         description: "Migration file path"
         required: true
-        default: "supabase/migrations/0046_ads.sql"
+        default: "supabase/migrations/0047_ad_surfaces.sql"
   push:
     paths:
+      - "supabase/migrations/0047_ad_surfaces.sql"
       - "supabase/migrations/0046_ads.sql"
       - "supabase/migrations/0045_tenant_masjid_photo.sql"
       - "supabase/migrations/0044_collection_date.sql"
@@ -85,7 +86,7 @@ jobs:
       - name: Apply migration
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0046_ads.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0047_ad_surfaces.sql' }}
         run: |
           set -euo pipefail
           test -f "$FILE"
@@ -95,7 +96,7 @@ jobs:
       - name: Verify migration result
         if: steps.check.outputs.ready == 'true'
         env:
-          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0046_ads.sql' }}
+          FILE: ${{ github.event.inputs.file || 'supabase/migrations/0047_ad_surfaces.sql' }}
         run: |
           set -euo pipefail
           case "$FILE" in
@@ -411,6 +412,39 @@ jobs:
             end if;
           end $$;
           select 'ads gallery OK' as result;
+          SQL
+              ;;
+            *0047*)
+              psql "$DB_URL_RUN" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          begin
+            if not exists (
+              select 1 from information_schema.columns
+               where table_schema = 'public'
+                 and table_name = 'ads'
+                 and column_name = 'show_web'
+            ) then
+              raise exception 'ads.show_web is missing';
+            end if;
+            if not exists (
+              select 1 from information_schema.columns
+               where table_schema = 'public'
+                 and table_name = 'ads'
+                 and column_name = 'show_app'
+            ) then
+              raise exception 'ads.show_app is missing';
+            end if;
+            if not exists (
+              select 1 from pg_proc p
+                join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public'
+                 and p.proname = 'list_active_ads'
+                 and pg_get_function_identity_arguments(p.oid) = 'p_surface text'
+            ) then
+              raise exception 'list_active_ads(text) is missing';
+            end if;
+          end $$;
+          select 'ads surfaces OK' as result;
           SQL
               ;;
             *)

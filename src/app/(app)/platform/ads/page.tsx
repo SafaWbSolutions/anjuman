@@ -12,10 +12,12 @@ import {
   ImagePlus,
   Loader2,
   Megaphone,
+  Monitor,
   MousePointerClick,
   Pencil,
   Plus,
   RefreshCw,
+  Smartphone,
   Trash2,
   Users,
   X,
@@ -67,6 +69,7 @@ export default function AdsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [audience, setAudience] = useState("all");
+  const [surface, setSurface] = useState("all");
   const [editing, setEditing] = useState<Ad | null>(null);
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -99,10 +102,13 @@ export default function AdsPage() {
       if (status === "paused" && ad.isActive) return false;
       if (audience === "global" && !ad.isGlobal) return false;
       if (audience === "targeted" && ad.isGlobal) return false;
+      if (surface === "web" && !ad.showWeb) return false;
+      if (surface === "app" && !ad.showApp) return false;
+      if (surface === "none" && (ad.showWeb || ad.showApp)) return false;
       if (!term) return true;
       return ad.title.toLowerCase().includes(term);
     });
-  }, [ads, search, status, audience]);
+  }, [ads, search, status, audience, surface]);
 
   const tenantName = (id: string) =>
     tenants.find((t) => t.id === id)?.name ?? "Unknown anjuman";
@@ -252,6 +258,16 @@ export default function AdsPage() {
           <option value="global">Global</option>
           <option value="targeted">Selected anjumans</option>
         </Select>
+        <Select
+          value={surface}
+          onChange={(e) => setSurface(e.target.value)}
+          className="w-auto py-2 text-[12.5px]"
+        >
+          <option value="all">Website + app</option>
+          <option value="web">Website only</option>
+          <option value="app">App only</option>
+          <option value="none">Not published anywhere</option>
+        </Select>
         <span className="ml-auto text-[12px] text-ink-500">{rows.length} ads</span>
       </div>
 
@@ -298,6 +314,19 @@ export default function AdsPage() {
                   </Badge>
                   <Badge tone={ad.isGlobal ? "brand" : "violet"}>
                     {ad.isGlobal ? "Global" : `${ad.tenantIds.length} anjuman`}
+                  </Badge>
+                  <Badge
+                    tone={
+                      ad.showWeb && ad.showApp ? "blue" : ad.showWeb || ad.showApp ? "slate" : "red"
+                    }
+                  >
+                    {ad.showWeb && ad.showApp
+                      ? "Web + App"
+                      : ad.showWeb
+                        ? "Web"
+                        : ad.showApp
+                          ? "App"
+                          : "Not published"}
                   </Badge>
                 </div>
 
@@ -367,10 +396,10 @@ export default function AdsPage() {
       )}
 
       <div className="mt-5 rounded-2xl border border-brand-100 bg-brand-50/60 p-4 text-[11.5px] leading-relaxed text-brand-900">
-        <b>Tip:</b> 1280×720 (YouTube thumbnail) image best rehti hai. Banner har panel ke
-        top par 10 second ke liye dikhta hai, phir 3D flip ke saath agli ad par jaata hai.
-        Anjuman ka naam/logo phir bhi pehla slide rehta hai. Images R2 par jaati hain aur 5 MB
-        se badi file reject ho jaati hai.
+        <b>Tip:</b> 1280×720 (YouTube thumbnail) image app ke liye perfect hai. Website
+        patla banner use karta hai, is liye wahan image ka beech ka hissa dikhta hai —
+        text ko centre me rakhein. Placement se choose karein ad website par dikhegi, app
+        par, ya dono par. Images R2 par jaati hain aur 5 MB se badi file reject ho jaati hai.
       </div>
 
       <AdDrawer
@@ -459,6 +488,8 @@ function AdDrawer({
   const [linkUrl, setLinkUrl] = useState(ad?.linkUrl ?? "");
   const [isGlobal, setIsGlobal] = useState(ad?.isGlobal ?? true);
   const [isActive, setIsActive] = useState(ad?.isActive ?? true);
+  const [showWeb, setShowWeb] = useState(ad?.showWeb ?? true);
+  const [showApp, setShowApp] = useState(ad?.showApp ?? true);
   const [sortOrder, setSortOrder] = useState(String(ad?.sortOrder ?? 0));
   const [startsAt, setStartsAt] = useState(ad?.startsAt?.slice(0, 10) ?? "");
   const [endsAt, setEndsAt] = useState(ad?.endsAt?.slice(0, 10) ?? "");
@@ -509,6 +540,10 @@ function AdDrawer({
       toast("Start date end date se pehle honi chahiye", "error");
       return;
     }
+    if (!showWeb && !showApp) {
+      toast("Kam se kam ek jagah publish karein — website ya app", "error");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -518,6 +553,8 @@ function AdDrawer({
         linkUrl: linkUrl || null,
         isGlobal,
         isActive,
+        showWeb,
+        showApp,
         sortOrder: Number(sortOrder) || 0,
         startsAt: startsAt ? new Date(`${startsAt}T00:00:00`).toISOString() : null,
         endsAt: endsAt ? new Date(`${endsAt}T23:59:59`).toISOString() : null,
@@ -543,12 +580,14 @@ function AdDrawer({
       open={open}
       onClose={onClose}
       title={ad ? "Edit ad" : "New ad"}
-      subtitle="Banner har panel ke top par rotate hota hai"
+      subtitle="Website, Android app, ya dono ke liye publish karein"
       width="max-w-2xl"
       footer={
         <div className="flex items-center justify-between gap-2">
           <span className="text-[11.5px] text-ink-500">
             {isGlobal ? "Sabhi anjumans ko dikhega" : `${tenantIds.length} anjuman ko dikhega`}
+            {" · "}
+            {showWeb && showApp ? "Website + App" : showWeb ? "Website only" : "App only"}
           </span>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={onClose} disabled={saving}>
@@ -660,6 +699,46 @@ function AdDrawer({
         <Field label="End date (optional)">
           <Input type="date" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
         </Field>
+      </div>
+
+      <div className="mt-5">
+        <p className="mb-2 text-[12.5px] font-semibold text-ink-800">Placement</p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <PlacementChoice
+            active={showWeb && showApp}
+            onClick={() => {
+              setShowWeb(true);
+              setShowApp(true);
+            }}
+            icon={Globe2}
+            title="Website + App"
+            hint="Dono jagah dikhegi."
+          />
+          <PlacementChoice
+            active={showWeb && !showApp}
+            onClick={() => {
+              setShowWeb(true);
+              setShowApp(false);
+            }}
+            icon={Monitor}
+            title="Website only"
+            hint="Compact banner, web panel me."
+          />
+          <PlacementChoice
+            active={!showWeb && showApp}
+            onClick={() => {
+              setShowWeb(false);
+              setShowApp(true);
+            }}
+            icon={Smartphone}
+            title="App only"
+            hint="Poori 16:9 image, app me."
+          />
+        </div>
+        <p className="mt-1.5 text-[11.5px] text-ink-500">
+          Website patla banner use karta hai, app poori 16:9 (YouTube thumbnail) image dikhata
+          hai — is liye dono ke liye alag ad bana sakte hain.
+        </p>
       </div>
 
       <div className="mt-5">
@@ -802,5 +881,38 @@ function AdDrawer({
         </div>
       )}
     </Drawer>
+  );
+}
+
+function PlacementChoice({
+  active,
+  onClick,
+  icon: Icon,
+  title,
+  hint,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: typeof Monitor;
+  title: string;
+  hint: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-start gap-2.5 rounded-xl border p-3 text-left transition",
+        active
+          ? "border-brand-400 bg-brand-50/70 ring-2 ring-brand-500/15"
+          : "border-ink-200 hover:border-ink-300"
+      )}
+    >
+      <Icon className={cn("mt-0.5 h-4 w-4", active ? "text-brand-600" : "text-ink-400")} />
+      <span>
+        <span className="block text-[12.5px] font-medium text-ink-900">{title}</span>
+        <span className="block text-[11px] text-ink-500">{hint}</span>
+      </span>
+    </button>
   );
 }

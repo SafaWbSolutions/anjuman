@@ -32,6 +32,7 @@ import {
 import type {
   Ad,
   AdInput,
+  AdSurface,
   Approval,
   Complaint,
   Donation,
@@ -1325,6 +1326,8 @@ function toAd(r: Row): Ad {
     linkUrl: r.link_url ?? null,
     isGlobal: Boolean(r.is_global),
     isActive: Boolean(r.is_active),
+    showWeb: r.show_web === undefined ? true : Boolean(r.show_web),
+    showApp: r.show_app === undefined ? true : Boolean(r.show_app),
     sortOrder: num(r.sort_order),
     startsAt: r.starts_at ?? null,
     endsAt: r.ends_at ?? null,
@@ -1353,11 +1356,11 @@ export async function listAds(): Promise<Ad[]> {
   return (data ?? []).map(toAd);
 }
 
-/** Active ads the signed-in user may see (global + their anjuman). */
-export async function listActiveAds(): Promise<Ad[]> {
+/** Active ads for one surface: the web panel or the Android app. */
+export async function listActiveAds(surface: AdSurface = "web"): Promise<Ad[]> {
   if (isDemoMode) return [];
 
-  const { data, error } = await client().rpc("list_active_ads");
+  const { data, error } = await client().rpc("list_active_ads", { p_surface: surface });
   if (error) throw error;
   return ((data ?? []) as Row[]).map(toAd);
 }
@@ -1373,6 +1376,8 @@ export async function createAd(input: AdInput): Promise<string> {
       link_url: input.linkUrl || null,
       is_global: input.isGlobal,
       is_active: input.isActive,
+      show_web: input.showWeb,
+      show_app: input.showApp,
       sort_order: input.sortOrder,
       starts_at: input.startsAt || null,
       ends_at: input.endsAt || null,
@@ -1404,6 +1409,8 @@ export async function updateAd(id: string, input: AdInput): Promise<void> {
       link_url: input.linkUrl || null,
       is_global: input.isGlobal,
       is_active: input.isActive,
+      show_web: input.showWeb,
+      show_app: input.showApp,
       sort_order: input.sortOrder,
       starts_at: input.startsAt || null,
       ends_at: input.endsAt || null,

@@ -71,6 +71,9 @@ export interface Tenant {
 
 /* ── Ads / announcements ─────────────────────────────────────── */
 
+/** Where an ad is displayed: the web panel or the Android app. */
+export type AdSurface = "web" | "app";
+
 export interface Ad {
   id: string;
   title: string;
@@ -81,6 +84,10 @@ export interface Ad {
   /** true = every anjuman; false = only `tenantIds`. */
   isGlobal: boolean;
   isActive: boolean;
+  /** Compact banner at the top of the web panel. */
+  showWeb: boolean;
+  /** Full 16:9 slide inside the Android app. */
+  showApp: boolean;
   sortOrder: number;
   startsAt?: string | null;
   endsAt?: string | null;
@@ -96,6 +103,8 @@ export interface AdInput {
   linkUrl?: string | null;
   isGlobal: boolean;
   isActive: boolean;
+  showWeb: boolean;
+  showApp: boolean;
   sortOrder: number;
   startsAt?: string | null;
   endsAt?: string | null;

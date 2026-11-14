@@ -4,7 +4,7 @@
 > database me kya hai, paisa kaise calculate hota hai, aur bug aaye to **direct kis file me
 > haath daalna hai**. Naya developer pehle ye file padhe, phir code khole.
 >
-> **Last verified:** 14 Nov 2026 · migration head `0046` · ads gallery (global / targeted banners) deployed.
+> **Last verified:** 14 Nov 2026 · migration head `0047` · ads gallery with web / app placements deployed.
 
 ---
 
@@ -65,7 +65,7 @@ Full matrix: [§14](#14-roles--navigation-matrix).
 | Hosting | Cloudflare Pages, project `anjuman`, branch `main` |
 | Supabase project ref | `oytcwpemrrnqrbrtonyu` (region `ap-south-1` / Mumbai) |
 | GitHub repo | `SafaWbSolutions/anjuman` (public) |
-| Migration head | `0037_payment_settings_rpc.sql` |
+| Migration head | `0047_ad_surfaces.sql` |
 | DB connection (CI) | session pooler `aws-0-ap-south-1.pooler.supabase.com:5432`, user `postgres.<ref>` |
 | Backups | GitHub Release tag `backup-archive`, encrypted `.sql.gz.gpg` |
 
@@ -603,7 +603,7 @@ and sets KV `uploads_disabled=true` at 10 GB. The upload Worker returns HTTP 403
 
 ---
 
-## 11. Migrations 0001 → 0046
+## 11. Migrations 0001 → 0047
 
 Migrations **ordered** hain aur live DB par already applied hain. Naya change **naya file**
 `0038_...sql` banakar add karein; purani file edit na karein (live DB me already applied
@@ -657,6 +657,7 @@ hai).
 | 0044 | `collection_date.sql` | Collection date drives `verified_at` + ledger date; future dates blocked |
 | 0045 | `tenant_masjid_photo.sql` | `tenants.masjid_photo_url` for branding |
 | 0046 | `ads.sql` | Ads gallery: global / targeted banners, R2 `ads/` prefix, `list_active_ads()`, impression + click counters |
+| 0047 | `ad_surfaces.sql` | `show_web` / `show_app` per ad; `list_active_ads(p_surface)` so website and app have separate banners |
 
 ### Migration rules
 

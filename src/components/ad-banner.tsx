@@ -111,7 +111,7 @@ export function AdBanner() {
       className="relative mb-5 overflow-hidden rounded-2xl border border-ink-200 bg-ink-900 shadow-[var(--shadow-card)]"
       style={{ perspective: "1400px" }}
     >
-      <div key={index} className="ad-flip-in h-[132px] w-full sm:h-[158px] lg:h-[178px]">
+      <div key={index} className="ad-flip-in h-[196px] w-full sm:h-[248px] lg:h-[310px]">
         {current.kind === "brand" ? (
           <BrandSlide
             name={user.tenantName || "Anjuman"}
@@ -223,30 +223,40 @@ function AdSlide({ ad, track }: { ad: Ad; track: boolean }) {
   const body = (
     <>
       {ad.imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={ad.imageUrl}
-          alt={ad.title}
-          className="absolute inset-0 h-full w-full object-cover"
-        />
+        <>
+          {/* Blurred fill so the full 16:9 banner is never cropped. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={ad.imageUrl}
+            alt=""
+            aria-hidden
+            className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-30 blur-2xl"
+          />
+          <div className="relative flex h-full w-full items-center justify-center p-1.5 sm:p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={ad.imageUrl}
+              alt={ad.title}
+              className="max-h-full max-w-full rounded-md object-contain shadow-lg"
+            />
+          </div>
+        </>
       ) : (
-        <div className="absolute inset-0 bg-gradient-to-r from-ink-800 to-ink-700" />
+        <div className="flex h-full flex-col items-center justify-center gap-2 bg-gradient-to-r from-ink-800 to-ink-700 p-5">
+          <Megaphone className="h-6 w-6 text-brand-300" />
+          <p className="text-center text-[14px] font-semibold text-white">{ad.title}</p>
+        </div>
       )}
-      <div className="absolute inset-0 bg-gradient-to-t from-ink-900/80 via-ink-900/10 to-transparent" />
 
-      <div className="relative flex h-full flex-col justify-end p-4 sm:p-5">
-        <span className="mb-1.5 inline-flex w-fit items-center gap-1 rounded-md bg-black/45 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white/90 backdrop-blur-sm">
-          <Megaphone className="h-3 w-3" /> Announcement
+      <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-md bg-black/55 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white/90 backdrop-blur-sm">
+        <Megaphone className="h-3 w-3" /> Announcement
+      </span>
+
+      {ad.linkUrl && (
+        <span className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-1 rounded-md bg-black/55 px-2 py-1 text-[10.5px] font-medium text-white backdrop-blur-sm">
+          Open <ExternalLink className="h-3 w-3" />
         </span>
-        <p className="line-clamp-2 max-w-[85%] text-[14.5px] font-semibold leading-snug text-white drop-shadow sm:text-[16px]">
-          {ad.title}
-        </p>
-        {ad.linkUrl && (
-          <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-200">
-            Tap to open <ExternalLink className="h-3 w-3" />
-          </p>
-        )}
-      </div>
+      )}
     </>
   );
 

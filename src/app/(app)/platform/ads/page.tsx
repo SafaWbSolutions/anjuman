@@ -185,9 +185,14 @@ export default function AdsPage() {
         title="Ads & announcements"
         description="Upload a banner once and show it to every anjuman — or only to the committees you pick. Slots rotate at the top of every panel."
         actions={
-          <Button onClick={() => setCreating(true)}>
-            <Plus className="h-4 w-4" /> New ad
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => void refresh()}>
+              <RefreshCw className="h-4 w-4" /> Refresh views
+            </Button>
+            <Button onClick={() => setCreating(true)}>
+              <Plus className="h-4 w-4" /> New ad
+            </Button>
+          </div>
         }
       />
 
@@ -314,11 +319,11 @@ export default function AdsPage() {
                 <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-500">
                   <span className="inline-flex items-center gap-1">
                     <Eye className="h-3.5 w-3.5" />
-                    {ad.impressions.toLocaleString("en-IN")}
+                    {ad.impressions.toLocaleString("en-IN")} views
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <MousePointerClick className="h-3.5 w-3.5" />
-                    {ad.clicks.toLocaleString("en-IN")}
+                    {ad.clicks.toLocaleString("en-IN")} clicks
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <CalendarClock className="h-3.5 w-3.5" />

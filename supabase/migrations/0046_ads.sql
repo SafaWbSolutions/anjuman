@@ -130,6 +130,8 @@ begin
   end if;
 end $$;
 
+revoke all on function public.list_active_ads() from public;
+revoke all on function public.record_ad_event(uuid, text) from public;
 grant execute on function public.list_active_ads() to authenticated;
 grant execute on function public.record_ad_event(uuid, text) to authenticated;
 
